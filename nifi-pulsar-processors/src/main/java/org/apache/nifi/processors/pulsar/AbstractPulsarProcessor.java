@@ -25,7 +25,7 @@ import org.apache.nifi.pulsar.PulsarClientService;
 
 public abstract class AbstractPulsarProcessor extends AbstractProcessor {
 
-	static final PropertyDescriptor TOPIC = new PropertyDescriptor.Builder()
+	protected static final PropertyDescriptor TOPIC = new PropertyDescriptor.Builder()
 	        .name("topic")
 	        .displayName("Topic Name")
 	        .description("The name of the Pulsar Topic.")
@@ -34,19 +34,19 @@ public abstract class AbstractPulsarProcessor extends AbstractProcessor {
 	        .expressionLanguageSupported(true)
 	        .build();
 	
-	static final PropertyDescriptor PULSAR_CLIENT_SERVICE = new PropertyDescriptor.Builder()
-			  .name("Pulsar Client Service")
-			  .description("Specified the Pulsar Client Service that can be used to create Pulsar connections")
-			  .required(true)
-			  .identifiesControllerService(PulsarClientService.class)
-			  .build();
+	protected static final PropertyDescriptor PULSAR_CLIENT_SERVICE = new PropertyDescriptor.Builder()
+			.name("Pulsar Client Service")
+			.description("Specified the Pulsar Client Service that can be used to create Pulsar connections")
+			.required(true)
+			.identifiesControllerService(PulsarClientService.class)
+			.build();
 
-	static final Relationship REL_SUCCESS = new Relationship.Builder()
+	protected static final Relationship REL_SUCCESS = new Relationship.Builder()
 	        .name("success")
 	        .description("FlowFiles for which all content was sent to Pulsar.")
 	        .build();
 
-	static final Relationship REL_FAILURE = new Relationship.Builder()
+	protected static final Relationship REL_FAILURE = new Relationship.Builder()
 	        .name("failure")
 	        .description("Any FlowFile that cannot be sent to Pulsar will be routed to this Relationship")
 	        .build();

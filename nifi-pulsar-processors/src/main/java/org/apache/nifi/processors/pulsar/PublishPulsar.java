@@ -43,6 +43,7 @@ import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.pulsar.PulsarClientService;
 import org.apache.nifi.stream.io.StreamUtils;
+import org.apache.nifi.util.StringUtils;
 import org.apache.pulsar.client.api.PulsarClientException;
 
 @Tags({"Apache", "Pulsar", "Put", "Send", "Message", "PubSub"})
@@ -138,7 +139,14 @@ public class PublishPulsar extends AbstractPulsarProcessor {
         			continue;
         		}
         	
-        		final String topic = context.getProperty(TOPIC).evaluateAttributeExpressions(flowFile).getValue();            
+        		final String topic = context.getProperty(TOPIC).evaluateAttributeExpressions(flowFile).getValue();  
+        		
+        		if (StringUtils.isBlank(topic)) {
+        			logger.error("Invalid topic specified {}", new Object[] {topic});
+        			failedFlowFiles.add(flowFile);
+        			continue;
+        		}
+        		
         		WrappedMessageProducer wrappedProducer = getTopicProducerQueue(topic).poll();
         		
         		if (wrappedProducer == null) {
@@ -153,7 +161,7 @@ public class PublishPulsar extends AbstractPulsarProcessor {
         	            		wrappedProducer.close(logger);
         	            }
         	                
-        			} catch (final PulsarClientException e) {
+        			} catch (final Exception e) {
         				logger.error("Failed to connect to Pulsar Server due to {}", new Object[]{e});                    
         				/* Keep trying the rest of the Flow files, as each Topic attribute may be different.
         				 * and failure to send to one topic is not indicative of a Pulsar system failure
@@ -180,11 +188,13 @@ public class PublishPulsar extends AbstractPulsarProcessor {
         		session.transfer(failedFlowFiles, REL_FAILURE);
         }
         
+        if (producers.isEmpty())
+        		return;
         
         // Release the WrappedMessageProducers
         for (String topic : producers.keySet()) {
         		for (WrappedMessageProducer producer : producers.get(topic)) {
-        			if (!producer.isClosed()) {
+        			if (producer != null && !producer.isClosed()) {
         				getTopicProducerQueue(topic).offer(producer);
         			}
         		}

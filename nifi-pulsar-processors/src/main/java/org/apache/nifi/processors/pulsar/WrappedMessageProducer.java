@@ -31,7 +31,11 @@ public class WrappedMessageProducer {
 
 	public void close(ComponentLog logger) {
 		this.closed = true;
-		
+		try {
+			producer.close();
+		} catch (PulsarClientException e) {
+			logger.error("Unable to close Pulsar producer", e);
+		}
 	}
 
 	public Producer getProducer() {

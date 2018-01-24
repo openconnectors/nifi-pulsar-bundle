@@ -22,7 +22,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 
-public class ConsumePulsarProcessorTest {
+public class ConsumePulsarProcessorTest extends AbstractPulsarProcessorTest {
 
     private TestRunner testRunner;
 
