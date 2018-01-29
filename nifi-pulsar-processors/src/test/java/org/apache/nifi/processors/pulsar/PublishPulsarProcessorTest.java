@@ -12,7 +12,6 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.*;
 
 public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
@@ -40,7 +39,7 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_FAILURE);
         
         // Confirm that no Producer as created 
-        assertNull(pulsarClient.getMockProducer());
+        verify(pulsarClient.getMockClient(), times(0)).createProducer(anyString());
 	}
 	
 	@Test

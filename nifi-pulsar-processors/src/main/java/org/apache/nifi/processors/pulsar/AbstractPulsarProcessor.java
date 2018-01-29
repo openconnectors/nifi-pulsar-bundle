@@ -20,25 +20,15 @@ package org.apache.nifi.processors.pulsar;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.pulsar.PulsarClientService;
+import org.apache.nifi.pulsar.PulsarClientPool;
 
 public abstract class AbstractPulsarProcessor extends AbstractProcessor {
-
-	protected static final PropertyDescriptor TOPIC = new PropertyDescriptor.Builder()
-	        .name("topic")
-	        .displayName("Topic Name")
-	        .description("The name of the Pulsar Topic.")
-	        .required(true)
-	        .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
-	        .expressionLanguageSupported(true)
-	        .build();
 	
 	protected static final PropertyDescriptor PULSAR_CLIENT_SERVICE = new PropertyDescriptor.Builder()
 			.name("Pulsar Client Service")
 			.description("Specified the Pulsar Client Service that can be used to create Pulsar connections")
 			.required(true)
-			.identifiesControllerService(PulsarClientService.class)
+			.identifiesControllerService(PulsarClientPool.class)
 			.build();
 
 	protected static final Relationship REL_SUCCESS = new Relationship.Builder()

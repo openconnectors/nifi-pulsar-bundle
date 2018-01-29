@@ -24,14 +24,15 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
+import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
+import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
@@ -41,9 +42,14 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.pulsar.PulsarClientService;
+import org.apache.nifi.pulsar.PulsarClientPool;
+import org.apache.nifi.pulsar.PulsarProducer;
+import org.apache.nifi.pulsar.pool.PulsarProducerFactory;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StringUtils;
+import org.apache.pulsar.client.api.CompressionType;
+import org.apache.pulsar.client.api.ProducerConfiguration;
+import org.apache.pulsar.client.api.ProducerConfiguration.MessageRoutingMode;
 import org.apache.pulsar.client.api.PulsarClientException;
 
 @Tags({"Apache", "Pulsar", "Put", "Send", "Message", "PubSub"})
@@ -55,28 +61,121 @@ import org.apache.pulsar.client.api.PulsarClientException;
 
 public class PublishPulsar extends AbstractPulsarProcessor {
 	
-	public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
-            .name("Message Batch Size")
-            .description("The number of messages to pull/push in a single iteration of the processor")
+	static final AllowableValue COMPRESSION_TYPE_NONE = new AllowableValue("NONE", "None", "No compression");
+	static final AllowableValue COMPRESSION_TYPE_LZ4 = new AllowableValue("LZ4", "LZ4", "Compress with LZ4 algorithm.");
+	static final AllowableValue COMPRESSION_TYPE_ZLIB = new AllowableValue("ZLIB", "ZLIB", "Compress with ZLib algorithm");
+	
+	static final AllowableValue MESSAGE_ROUTING_MODE_CUSTOM_PARTITION = new AllowableValue("CustomPartition", "Custom Partition", "Route messages to a custom partition");
+	static final AllowableValue MESSAGE_ROUTING_MODE_ROUND_ROBIN_PARTITION = new AllowableValue("RoundRobinPartition", "Round Robin Partition", "Route messages to all partitions in a round robin manner");
+	static final AllowableValue MESSAGE_ROUTING_MODE_SINGLE_PARTITION = new AllowableValue("SinglePartition", "Single Partition", "Route messages to a single partition");
+	
+	public static final PropertyDescriptor TOPIC = new PropertyDescriptor.Builder()
+	        .name("topic")
+	        .displayName("Topic Name")
+	        .description("The name of the Pulsar Topic.")
+	        .required(true)
+	        .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
+	        .expressionLanguageSupported(true)
+	        .build();
+	
+	public static final PropertyDescriptor ASYNC_ENABLED = new PropertyDescriptor.Builder()
+            .name("Async Enabled")
+            .description("Control whether the messages will be sent asyncronously or not. Messages sent"
+            		+ "syncronously will be acknowledged immediately before processing the next message, while"
+            		+ "asyncronous messages will be acknowledged after the Pulsar broker responds.")
             .required(true)
-            .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
-            .defaultValue("10")
+            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
+            .defaultValue("false")
             .build();
-
+	
+	public static final PropertyDescriptor BATCHING_ENABLED = new PropertyDescriptor.Builder()
+            .name("Batching Enabled")
+            .description("Control whether automatic batching of messages is enabled for the producer. "
+            		+ "default: false [No batching] When batching is enabled, multiple calls to "
+            		+ "Producer.sendAsync can result in a single batch to be sent to the broker, leading "
+            		+ "to better throughput, especially when publishing small messages. If compression is "
+            		+ "enabled, messages will be compressed at the batch level, leading to a much better "
+            		+ "compression ratio for similar headers or contents. When enabled default batch delay "
+            		+ "is set to 10 ms and default batch size is 1000 messages")
+            .required(false)
+            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
+            .defaultValue("false")
+            .build();
+			
+	public static final PropertyDescriptor BATCHING_MAX_MESSAGES = new PropertyDescriptor.Builder()
+            .name("Batching Max Messages")
+            .description("Set the maximum number of messages permitted in a batch. default: "
+            		+ "1000 If set to a value greater than 1, messages will be queued until this "
+            		+ "threshold is reached or batch interval has elapsed")
+            .required(false)
+            .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+            .defaultValue("1000")
+            .build();
+	
+	public static final PropertyDescriptor BATCH_INTERVAL = new PropertyDescriptor.Builder()
+            .name("Batch Interval")
+            .description("Set the time period within which the messages sent will be batched default: 10ms "
+            		+ "if batch messages are enabled. If set to a non zero value, messages will be queued until "
+            		+ "this time interval or until the Batching Max Messages threshould has been reached")
+            .required(false)
+            .addValidator(StandardValidators.POSITIVE_LONG_VALIDATOR)
+            .defaultValue("1000")
+            .build();
+	
+	public static final PropertyDescriptor BLOCK_IF_QUEUE_FULL = new PropertyDescriptor.Builder()
+			.name("Block if Message Queue Full")
+			.description("Set whether the processor should block when the outgoing message queue is full. "
+					+ "Default is false. If set to false, send operations will immediately fail with "
+					+ "ProducerQueueIsFullError when there is no space left in pending queue.")
+			.required(false)
+            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
+            .defaultValue("false")
+            .build();
+	
+	public static final PropertyDescriptor COMPRESSION_TYPE = new PropertyDescriptor.Builder()
+            .name("Compression Type")
+            .description("Set the compression type for the producer.")
+            .required(false)
+            .allowableValues(COMPRESSION_TYPE_NONE, COMPRESSION_TYPE_LZ4, COMPRESSION_TYPE_ZLIB)
+            .defaultValue(COMPRESSION_TYPE_NONE.getValue())
+            .build();
+	
+	public static final PropertyDescriptor MESSAGE_ROUTING_MODE = new PropertyDescriptor.Builder()
+            .name("Message Routing Mode")
+            .description("Set the compression type for the producer.")
+            .required(false)
+            .allowableValues(MESSAGE_ROUTING_MODE_CUSTOM_PARTITION, MESSAGE_ROUTING_MODE_ROUND_ROBIN_PARTITION, MESSAGE_ROUTING_MODE_SINGLE_PARTITION)
+            .defaultValue(MESSAGE_ROUTING_MODE_ROUND_ROBIN_PARTITION.getValue())
+            .build();
+	
+	public static final PropertyDescriptor PENDING_MAX_MESSAGES = new PropertyDescriptor.Builder()
+            .name("Max Pending Messages")
+            .description("Set the max size of the queue holding the messages pending to receive an "
+            		+ "acknowledgment from the broker.")
+            .required(false)
+            .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+            .defaultValue("1000")
+            .build();
+	
 	private static final List<PropertyDescriptor> PROPERTIES;
     private static final Set<Relationship> RELATIONSHIPS;
-    
-    /* This data structure supports one queue per topic, with each queue having infinite length
-     * this allows us to reuse producers for a given topic, and kill all the producers if a given
-     * topic is experiencing communication issues.
-     */
-    private final Map<String, Queue<WrappedMessageProducer>> topicProducerQueues = new HashMap<String, Queue<WrappedMessageProducer>> ();
+     
+    // Reuse the same producer for a given topic
+    private Map<String, PulsarProducer> producers = new HashMap<String, PulsarProducer> ();
+    private ProducerConfiguration producerConfig;
     
     static {
         final List<PropertyDescriptor> properties = new ArrayList<>();
         properties.add(PULSAR_CLIENT_SERVICE);
         properties.add(TOPIC);
-        properties.add(BATCH_SIZE);
+        properties.add(ASYNC_ENABLED);
+        properties.add(BATCHING_ENABLED);        
+        properties.add(BATCHING_MAX_MESSAGES);
+        properties.add(BATCH_INTERVAL);
+        properties.add(BLOCK_IF_QUEUE_FULL);
+        properties.add(COMPRESSION_TYPE);
+        properties.add(MESSAGE_ROUTING_MODE);
+        properties.add(PENDING_MAX_MESSAGES);
 
         PROPERTIES = Collections.unmodifiableList(properties);
 
@@ -95,130 +194,124 @@ public class PublishPulsar extends AbstractPulsarProcessor {
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
         return PROPERTIES;
     }
-    
+       
     @OnStopped
-    public void cleanupResources() {
-    	
-    		for (Queue<WrappedMessageProducer> producerQueue : topicProducerQueues.values() ) {
-    			WrappedMessageProducer wrappedProducer = producerQueue.poll();
-    	        while (wrappedProducer != null) {
-    	            wrappedProducer.close(getLogger());
-    	            wrappedProducer = producerQueue.poll();
-    	        }
-    		}           
+    private void cleanUp(ProcessContext context) {
+    		// Close all of the producers and invalidate them, so they get removed from the Resource Pool
+    		for (PulsarProducer producer : producers.values() ) {
+    			producer.close(getLogger());
+    			
+    			context.getProperty(PULSAR_CLIENT_SERVICE)
+    				.asControllerService(PulsarClientPool.class).invalidate(producer);
+    		}
+    		
+    		producers.clear();
     }
+    
     
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
 		
-		final ComponentLog logger = getLogger();
-        final List<FlowFile> flowFiles = session.get(context.getProperty(BATCH_SIZE).asInteger().intValue());
-        
-        if (flowFiles.isEmpty()) {
-            return;
-        }
-        
-        final Set<FlowFile> successfulFlowFiles = new HashSet<FlowFile>();
-        final Set<FlowFile> failedFlowFiles = new HashSet<FlowFile>();
-        final Map<String, Set<WrappedMessageProducer>> producers = new HashMap<String, Set<WrappedMessageProducer>> ();
-        
-        	// Send each FlowFile to Pulsar asynchronously.
-        for (final FlowFile flowFile : flowFiles) {
-        	
-        		// Read the contents of the FlowFile into a byte array
-            final byte[] messageContent = new byte[(int) flowFile.getSize()];
-            session.read(flowFile, new InputStreamCallback() {
-            		@Override
-                public void process(final InputStream in) throws IOException {
-            			StreamUtils.fillBuffer(in, messageContent, true);
-                }
-            });
-            
-            // Nothing to do, so skip this Flow file.
-        		if (messageContent == null || messageContent.length < 1) {
-        			continue;
-        		}
-        	
-        		final String topic = context.getProperty(TOPIC).evaluateAttributeExpressions(flowFile).getValue();  
-        		
-        		if (StringUtils.isBlank(topic)) {
-        			logger.error("Invalid topic specified {}", new Object[] {topic});
-        			failedFlowFiles.add(flowFile);
-        			continue;
-        		}
-        		
-        		WrappedMessageProducer wrappedProducer = getTopicProducerQueue(topic).poll();
-        		
-        		if (wrappedProducer == null) {
-        			try {
-        				wrappedProducer = createMessageProducer(context, topic);
-        					        	                
-        	            if (wrappedProducer.send(messageContent, logger)) {
-        	            		successfulFlowFiles.add(flowFile);        	                       	            		
-        	            } else {
-        	            		failedFlowFiles.add(flowFile);
-        	                	// We need to close all of these producers, so they can be flushed
-        	            		wrappedProducer.close(logger);
-        	            }
-        	                
-        			} catch (final Exception e) {
-        				logger.error("Failed to connect to Pulsar Server due to {}", new Object[]{e});                    
-        				/* Keep trying the rest of the Flow files, as each Topic attribute may be different.
-        				 * and failure to send to one topic is not indicative of a Pulsar system failure
-        				 */
-        				failedFlowFiles.add(flowFile);
-        			} finally {
-        				
-        				// Keep track of all the producers used so we can either release them back to the pool if they haven't been closed
-        				if ( producers.get(topic) == null ) {
-        					producers.put(topic, new HashSet<WrappedMessageProducer> ());
-        				}
-        				
-        				producers.get(topic).add(wrappedProducer);
-        			}
-        		}
-        	}
-        
-        // Handle successful and failed flow files
-        if (!successfulFlowFiles.isEmpty()) {
-        		session.transfer(successfulFlowFiles, REL_SUCCESS);
-        }
-        
-        if (!failedFlowFiles.isEmpty()) {
-        		session.transfer(failedFlowFiles, REL_FAILURE);
-        }
-        
-        if (producers.isEmpty())
-        		return;
-        
-        // Release the WrappedMessageProducers
-        for (String topic : producers.keySet()) {
-        		for (WrappedMessageProducer producer : producers.get(topic)) {
-        			if (producer != null && !producer.isClosed()) {
-        				getTopicProducerQueue(topic).offer(producer);
-        			}
-        		}
-        }
+		FlowFile flowFile = session.get();
+		
+		if (flowFile == null)
+			return;
+		
+		final ComponentLog logger = getLogger();	
+		final String topic = context.getProperty(TOPIC).evaluateAttributeExpressions(flowFile).getValue();  
+
+		if (StringUtils.isBlank(topic)) {
+			logger.error("Invalid topic specified {}", new Object[] {topic});
+			session.transfer(flowFile, REL_FAILURE);
+			return;
+		}
+
+		// Read the contents of the FlowFile into a byte array
+		final byte[] messageContent = new byte[(int) flowFile.getSize()];
+		session.read(flowFile, new InputStreamCallback() {
+			@Override
+			public void process(final InputStream in) throws IOException {
+				StreamUtils.fillBuffer(in, messageContent, true);
+			}
+		});
+
+		// Nothing to do, so skip this Flow file.
+		if (messageContent == null || messageContent.length < 1) {
+			session.transfer(flowFile, REL_SUCCESS);   
+			return;
+		}        		
+
+		try {
+
+			PulsarProducer producer = getProducer(topic, context);
+
+			if (producer.send(messageContent, logger)) {
+				session.transfer(flowFile, REL_SUCCESS);        				        				
+			} else {
+				session.transfer(flowFile, REL_FAILURE);        				
+				// We need to invalidate this producer, so it can be removed from the pool    
+				context.getProperty(PULSAR_CLIENT_SERVICE).asControllerService(PulsarClientPool.class).invalidate(producer);
+			}
+
+		} catch (final Exception e) {
+			logger.error("Failed to connect to Pulsar Server due to {}", new Object[]{e});                    
+			session.transfer(flowFile, REL_FAILURE);
+		} 
+        	              
 	}
+
 	
-	private Queue<WrappedMessageProducer> getTopicProducerQueue(String topic) {
+	private PulsarProducer getProducer(String topic, ProcessContext context) throws PulsarClientException, IllegalArgumentException {
 		
-		Queue<WrappedMessageProducer> queue = topicProducerQueues.get(topic);
+		if (producers.containsKey(topic))
+			return producers.get(topic);
 		
-		if (queue == null) {
-			queue = new LinkedBlockingQueue<>();
-			topicProducerQueues.put(topic, queue);
+		PulsarProducer producer = context.getProperty(PULSAR_CLIENT_SERVICE)
+				.asControllerService(PulsarClientPool.class).getProducer(getProducerProperties(context, topic));
+		
+		if (producer != null) {
+			producers.put(topic, producer);
 		}
 		
-		return queue;
+		return producer;
 	}
-
-	private WrappedMessageProducer createMessageProducer(ProcessContext context, String topic) throws PulsarClientException {
+	
+	private Properties getProducerProperties(ProcessContext context, String topic) {
 		
-		final PulsarClientService pulsarClientService = context.getProperty(PULSAR_CLIENT_SERVICE)
-        		.asControllerService(PulsarClientService.class);
-		
-		return new WrappedMessageProducer(pulsarClientService.getClient().createProducer(topic));
+		Properties props = new Properties();
+		props.put(PulsarProducerFactory.TOPIC_NAME, topic);
+		props.put(PulsarProducerFactory.PRODUCER_CONFIG, getProducerConfig(context));
+		return props;
 	}
-
+	
+    private ProducerConfiguration getProducerConfig(ProcessContext context) {
+    	
+		if (producerConfig == null) {
+			producerConfig = new ProducerConfiguration();
+			
+			if (context.getProperty(BATCHING_ENABLED).isSet())
+				producerConfig.setBatchingEnabled(context.getProperty(BATCHING_ENABLED).asBoolean());
+			
+			if (context.getProperty(BATCHING_MAX_MESSAGES).isSet())
+				producerConfig.setBatchingMaxMessages(context.getProperty(BATCHING_MAX_MESSAGES).asInteger());   
+			
+			if (context.getProperty(BATCH_INTERVAL).isSet())
+				producerConfig.setBatchingMaxPublishDelay(context.getProperty(BATCH_INTERVAL).asLong(), TimeUnit.MILLISECONDS);
+			
+			if (context.getProperty(BLOCK_IF_QUEUE_FULL).isSet())
+				producerConfig.setBlockIfQueueFull(context.getProperty(BLOCK_IF_QUEUE_FULL).asBoolean());
+			
+			if (context.getProperty(COMPRESSION_TYPE).isSet())
+				producerConfig.setCompressionType(CompressionType.valueOf(context.getProperty(COMPRESSION_TYPE).getValue()));
+			
+			if (context.getProperty(PENDING_MAX_MESSAGES).isSet())
+				producerConfig.setMaxPendingMessages(context.getProperty(PENDING_MAX_MESSAGES).asInteger());		
+			
+			if (context.getProperty(MESSAGE_ROUTING_MODE).isSet())
+				producerConfig.setMessageRoutingMode(MessageRoutingMode.valueOf(context.getProperty(MESSAGE_ROUTING_MODE).getValue()));
+		}
+		
+		return producerConfig;
+}
+	
 }
