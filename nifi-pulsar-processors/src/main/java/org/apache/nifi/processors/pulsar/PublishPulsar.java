@@ -119,7 +119,7 @@ public class PublishPulsar extends AbstractPulsarProcessor {
             		+ "this time interval or until the Batching Max Messages threshould has been reached")
             .required(false)
             .addValidator(StandardValidators.POSITIVE_LONG_VALIDATOR)
-            .defaultValue("1000")
+            .defaultValue("10")
             .build();
 	
 	public static final PropertyDescriptor BLOCK_IF_QUEUE_FULL = new PropertyDescriptor.Builder()
@@ -142,7 +142,7 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 	
 	public static final PropertyDescriptor MESSAGE_ROUTING_MODE = new PropertyDescriptor.Builder()
             .name("Message Routing Mode")
-            .description("Set the compression type for the producer.")
+            .description("Set the message routing mode for the producer. This applies only if the destination topic is partitioned")
             .required(false)
             .allowableValues(MESSAGE_ROUTING_MODE_CUSTOM_PARTITION, MESSAGE_ROUTING_MODE_ROUND_ROBIN_PARTITION, MESSAGE_ROUTING_MODE_SINGLE_PARTITION)
             .defaultValue(MESSAGE_ROUTING_MODE_ROUND_ROBIN_PARTITION.getValue())
@@ -196,10 +196,9 @@ public class PublishPulsar extends AbstractPulsarProcessor {
     }
        
     @OnStopped
-    private void cleanUp(ProcessContext context) {
+    public void cleanUp(final ProcessContext context) {
     		// Close all of the producers and invalidate them, so they get removed from the Resource Pool
     		for (PulsarProducer producer : producers.values() ) {
-    			producer.close(getLogger());
     			
     			context.getProperty(PULSAR_CLIENT_SERVICE)
     				.asControllerService(PulsarClientPool.class).invalidate(producer);
@@ -248,9 +247,8 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 			if (producer.send(messageContent, logger)) {
 				session.transfer(flowFile, REL_SUCCESS);        				        				
 			} else {
-				session.transfer(flowFile, REL_FAILURE);        				
-				// We need to invalidate this producer, so it can be removed from the pool    
-				context.getProperty(PULSAR_CLIENT_SERVICE).asControllerService(PulsarClientPool.class).invalidate(producer);
+				// Roll back the session, so we can re-process the Flowfile
+				session.rollback();        								
 			}
 
 		} catch (final Exception e) {
@@ -312,6 +310,6 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 		}
 		
 		return producerConfig;
-}
+    }
 	
 }

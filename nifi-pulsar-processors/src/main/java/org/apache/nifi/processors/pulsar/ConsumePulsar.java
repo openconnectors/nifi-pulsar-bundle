@@ -40,7 +40,6 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.pulsar.PulsarClientPool;
 import org.apache.nifi.pulsar.PulsarConsumer;
 import org.apache.nifi.pulsar.pool.PulsarConsumerFactory;
-import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerConfiguration;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -164,18 +163,26 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 	public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
 	
 		try {
-			PulsarConsumer consumer = getConsumer(context);
-			consume(context, session, consumer);
+			// PulsarConsumer consumer = getConsumer(context);
+			consume(context, session);
 		} catch (PulsarClientException e) {
 			getLogger().error("Unable to consume from Pulsar Topic ", e);
+			throw new ProcessException(e);
 		}
                 
 	}
 	
 	@OnStopped
-    private void cleanUp(ProcessContext context) {  		
-    		context.getProperty(PULSAR_CLIENT_SERVICE)
-    				.asControllerService(PulsarClientPool.class).invalidate(consumer);  		
+    public void close(final ProcessContext context) {  		
+		
+		getLogger().info("Disconnecting Pulsar Consumer");
+		if (consumer != null) {		
+			
+    			context.getProperty(PULSAR_CLIENT_SERVICE)
+    				.asControllerService(PulsarClientPool.class).invalidate(consumer);  	
+		}
+		
+		consumer = null;
     }
 	
 	private PulsarConsumer getConsumer(ProcessContext context) throws PulsarClientException {
@@ -188,7 +195,7 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		
 		consumer = pulsarClientService.getConsumer(getConsumerProperties(context));
 		
-        if (consumer == null) {
+        if (consumer == null || consumer.getConsumer() == null) {
         		throw new PulsarClientException("Unable to create Pulsar Consumer");
 		}
         
@@ -232,16 +239,15 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 	 * before committing the session. Typically, this allows the Framework 
 	 * to treat the content of the newly created FlowFiles much more efficiently.
 	 */
-	private void consume(ProcessContext context, ProcessSession session, PulsarConsumer wrappedConsumer) {
+	private void consume(ProcessContext context, ProcessSession session) throws PulsarClientException {
 		
 		final ComponentLog logger = getLogger();
-		final Consumer consumer = wrappedConsumer.getConsumer();
 		final Message msg;
 		FlowFile flowFile = null;
 		
         try {
 						
-        		msg = consumer.receive();
+        		msg = getConsumer(context).receive();
         		final byte[] value = msg.getData();
 
         		if (value != null && value.length > 0) {
@@ -269,15 +275,15 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
                  * the data from the external source. In general, though, potential data duplication 
                  * is preferred over potential data loss.
                  */
-        			consumer.acknowledge(msg);
+                getLogger().info("Acknowledging message " + msg.getMessageId());
+                consumer.acknowledge(msg);
+        		} else {
+        			// We didn't consume any data, so
+        			session.commit();
         		}
 					
-		} catch (PulsarClientException e) {		
-			logger.error("Failed to receive Pulsar Message due to {}", e);
-			wrappedConsumer.close(logger);
-			
-			if (flowFile != null)
-				session.remove(flowFile);
+		} catch (PulsarClientException e) {	
+			session.rollback();			
 		}
 
 	}

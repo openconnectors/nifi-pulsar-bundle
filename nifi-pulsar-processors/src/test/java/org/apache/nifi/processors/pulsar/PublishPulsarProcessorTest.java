@@ -6,23 +6,53 @@ import java.util.Map;
 
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
-import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentMatcher;
+import org.mockito.Matchers;
+import org.mockito.Mock;
 
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.*;
 
 public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
 	
-	private TestRunner runner;
-	private MockPulsarClientService pulsarClient;
+    @Mock
+	Producer mockProducer;
 
     @Before
     public void init() throws InitializationException {
         runner = TestRunners.newTestRunner(PublishPulsar.class);
-        pulsarClient = getPulsarClientService(runner);
+        
+        mockClient = mock(PulsarClient.class);
+        mockProducer = mock(Producer.class);
+        
+        try {
+        		// Use the mockProducer for all Producer interactions
+			when(mockClient.createProducer(anyString())).thenReturn(mockProducer);
+			
+			try {
+				when(mockProducer.send(Matchers.argThat(new ArgumentMatcher<byte[]>() {
+				    @Override
+				    public boolean matches(Object argument) {			        
+				        return true;
+				    }
+				}))).thenReturn(null);
+			} catch (PulsarClientException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+		} catch (PulsarClientException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        
+        addPulsarClientService();
     }
 	
 	@Test
@@ -39,7 +69,7 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_FAILURE);
         
         // Confirm that no Producer as created 
-        verify(pulsarClient.getMockClient(), times(0)).createProducer(anyString());
+        verify(mockClient, times(0)).createProducer(anyString());
 	}
 	
 	@Test
@@ -56,7 +86,7 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
         
         // Verify that we sent the data to topic-b.
-        verify(pulsarClient.getMockClient(), times(1)).createProducer("topic-b");
+        verify(mockClient, times(1)).createProducer("topic-b");
 	}
 
 	@Test
@@ -73,10 +103,10 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         outFile.assertContentEquals(content);
         
         // Verify that we sent the data to my-topic.
-        verify(pulsarClient.getMockClient(), times(1)).createProducer("my-topic");
+        verify(mockClient, times(1)).createProducer("my-topic");
         
         // Verify that the send method on the producer was called with the expected content
-        verify(pulsarClient.getMockProducer(), times(1)).send(content.getBytes());
+        verify(mockProducer, times(1)).send(content.getBytes());
 	}
 	
 	@Test
@@ -90,7 +120,7 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
         
         // Verify that the send method on the producer was called with the expected content
-        verify(pulsarClient.getMockProducer(), times(1)).send(content.getBytes());
+        verify(mockProducer, times(1)).send(content.getBytes());
 	}
 
 }

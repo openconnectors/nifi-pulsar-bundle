@@ -16,24 +16,88 @@
  */
 package org.apache.nifi.processors.pulsar;
 
-import org.apache.nifi.util.TestRunner;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.TestRunners;
+import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.*;
 
 public class ConsumePulsarProcessorTest extends AbstractPulsarProcessorTest {
 
-    private TestRunner testRunner;
+    @Mock
+	Consumer mockConsumer;
+    
+    @Mock
+	Message mockMessage;
+    
+    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
 
     @Before
-    public void init() {
-        testRunner = TestRunners.newTestRunner(ConsumePulsar.class);
+    public void init() throws InitializationException {
+        runner = TestRunners.newTestRunner(ConsumePulsar.class);
+        
+        mockClient = mock(PulsarClient.class);
+        mockConsumer = mock(Consumer.class);
+        mockMessage = mock(Message.class);
+        
+        try {
+        		when(mockClient.subscribe(anyString(), anyString())).thenReturn(mockConsumer);
+			when(mockConsumer.receive()).thenReturn(mockMessage);
+		} catch (PulsarClientException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        
+        addPulsarClientService();
     }
 
     @Test
-    public void testProcessor() {
-
+	public void simpleMessageTest() { 	
+    		when(mockMessage.getData()).thenReturn("Mocked Message".getBytes());
+    		
+    		runner.setProperty(ConsumePulsar.TOPIC, "foo");
+    		runner.setProperty(ConsumePulsar.SUBSCRIPTION, "bar");
+    		runner.run();
+        runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+    }
+    
+    @Test
+    public void emptyMessageTest() {
+    		when(mockMessage.getData()).thenReturn("".getBytes());
+		
+		runner.setProperty(ConsumePulsar.TOPIC, "foo");
+		runner.setProperty(ConsumePulsar.SUBSCRIPTION, "bar");
+		runner.run();
+		runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+    }
+    
+    /*
+     * Verify that the consumer gets closed. 
+     */
+    @Test
+    public void onStoppedTest() throws NoSuchMethodException, SecurityException {
+    		when(mockMessage.getData()).thenReturn("Mocked Message".getBytes());
+		
+		runner.setProperty(ConsumePulsar.TOPIC, "foo");
+		runner.setProperty(ConsumePulsar.SUBSCRIPTION, "bar");
+		runner.run(10, true);
+		runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+		
+		runner.assertQueueEmpty();
+		
+		System.out.println(ConsumePulsar.class.getMethod("close", ProcessContext.class).isBridge()); 
+		
     }
 
 }
