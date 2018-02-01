@@ -48,6 +48,8 @@ import org.apache.nifi.pulsar.pool.PulsarProducerFactory;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StringUtils;
 import org.apache.pulsar.client.api.CompressionType;
+import org.apache.pulsar.client.api.MessageId;
+import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerConfiguration;
 import org.apache.pulsar.client.api.ProducerConfiguration.MessageRoutingMode;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -242,13 +244,12 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 
 		try {
 
-			PulsarProducer producer = getProducer(topic, context);
+			Producer producer = getWrappedProducer(topic, context).getProducer();
 
-			if (producer.send(messageContent, logger)) {
-				session.transfer(flowFile, REL_SUCCESS);        				        				
+			if (context.getProperty(ASYNC_ENABLED).isSet() && context.getProperty(ASYNC_ENABLED).asBoolean()) {
+				this.sendAsync(producer, session, flowFile, messageContent);
 			} else {
-				// Roll back the session, so we can re-process the Flowfile
-				session.rollback();        								
+				this.send(producer, session, flowFile, messageContent);
 			}
 
 		} catch (final Exception e) {
@@ -257,9 +258,8 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 		} 
         	              
 	}
-
 	
-	private PulsarProducer getProducer(String topic, ProcessContext context) throws PulsarClientException, IllegalArgumentException {
+	private PulsarProducer getWrappedProducer(String topic, ProcessContext context) throws PulsarClientException, IllegalArgumentException {
 		
 		if (producers.containsKey(topic))
 			return producers.get(topic);
@@ -312,4 +312,22 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 		return producerConfig;
     }
 	
+    private void send(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) throws PulsarClientException {
+    		
+    		MessageId msgId = producer.send(messageContent);
+
+    		if (msgId != null) {
+			session.transfer(flowFile, REL_SUCCESS);        				        				
+		} else {
+			session.transfer(flowFile, REL_FAILURE);        								
+		}
+    
+    }
+    
+    private void sendAsync(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) {
+    		// Fire and forget.
+    		producer.sendAsync(messageContent);
+    		session.transfer(flowFile, REL_SUCCESS);
+    	
+    }
 }

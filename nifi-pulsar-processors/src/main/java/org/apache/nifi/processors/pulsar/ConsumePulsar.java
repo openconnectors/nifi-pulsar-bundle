@@ -40,6 +40,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.pulsar.PulsarClientPool;
 import org.apache.nifi.pulsar.PulsarConsumer;
 import org.apache.nifi.pulsar.pool.PulsarConsumerFactory;
+import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerConfiguration;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -137,6 +138,7 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
         properties.add(PULSAR_CLIENT_SERVICE);
         properties.add(TOPIC);
         properties.add(SUBSCRIPTION);
+        properties.add(ASYNC_ENABLED);
         properties.add(ACK_TIMEOUT);
         properties.add(PRIORITY_LEVEL);
         properties.add(RECEIVER_QUEUE_SIZE);
@@ -163,8 +165,11 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 	public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
 	
 		try {
-			// PulsarConsumer consumer = getConsumer(context);
-			consume(context, session);
+			if (context.getProperty(ASYNC_ENABLED).isSet() && context.getProperty(ASYNC_ENABLED).asBoolean()) {
+				consumeAsync(context, session);
+			} else {
+				consume(context, session);
+			}
 		} catch (PulsarClientException e) {
 			getLogger().error("Unable to consume from Pulsar Topic ", e);
 			throw new ProcessException(e);
@@ -185,7 +190,7 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		consumer = null;
     }
 	
-	private PulsarConsumer getConsumer(ProcessContext context) throws PulsarClientException {
+	private PulsarConsumer getWrappedConsumer(ProcessContext context) throws PulsarClientException {
 		
 		if (consumer != null)
 			return consumer;
@@ -230,9 +235,34 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		}
 		
 		return consumerConfig;
-}
+    }
 
 	
+    private void consumeAsync(ProcessContext context, ProcessSession session) throws PulsarClientException {
+    	
+    		Consumer consumer = getWrappedConsumer(context).getConsumer();
+    		
+    		consumer.receiveAsync().thenAccept(msg -> {
+			FlowFile flowFile = null;
+			final byte[] value = msg.getData();
+			if (value != null && value.length > 0) {
+				flowFile = session.create();
+				flowFile = session.write(flowFile, out -> {
+					out.write(value);
+				});
+				
+			}
+			session.transfer(flowFile, REL_SUCCESS);
+			session.commit();
+			try {
+				consumer.acknowledge(msg);
+			} catch (PulsarClientException e) {
+				getLogger().error("Unable to acknowledge message.", e);
+			}
+			
+		});
+    }
+    
 	/*
 	 * When this Processor expects to receive many small files, it may 
 	 * be advisable to create several FlowFiles from a single session 
@@ -241,13 +271,15 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 	 */
 	private void consume(ProcessContext context, ProcessSession session) throws PulsarClientException {
 		
+		Consumer consumer = getWrappedConsumer(context).getConsumer();
+		
 		final ComponentLog logger = getLogger();
 		final Message msg;
 		FlowFile flowFile = null;
 		
         try {
 						
-        		msg = getConsumer(context).receive();
+        		msg = consumer.receive();
         		final byte[] value = msg.getData();
 
         		if (value != null && value.length > 0) {

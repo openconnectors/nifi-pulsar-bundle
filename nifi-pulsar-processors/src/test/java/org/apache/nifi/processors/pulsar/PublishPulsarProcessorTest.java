@@ -3,10 +3,12 @@ package org.apache.nifi.processors.pulsar;
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunners;
+import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -35,20 +37,26 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         		// Use the mockProducer for all Producer interactions
 			when(mockClient.createProducer(anyString())).thenReturn(mockProducer);
 			
-			try {
-				when(mockProducer.send(Matchers.argThat(new ArgumentMatcher<byte[]>() {
+			when(mockProducer.send(Matchers.argThat(new ArgumentMatcher<byte[]>() {
 				    @Override
 				    public boolean matches(Object argument) {			        
 				        return true;
 				    }
-				}))).thenReturn(null);
-			} catch (PulsarClientException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
+			}))).thenReturn(mock(MessageId.class));
+			
+			CompletableFuture<MessageId> future = CompletableFuture.supplyAsync(() -> {
+			    return mock(MessageId.class);
+			});
+			
+			when(mockProducer.sendAsync(Matchers.argThat(new ArgumentMatcher<byte[]>() {
+			    @Override
+			    public boolean matches(Object argument) {			        
+			        return true;
+			    }
+			}))).thenReturn(future);
+
 			
 		} catch (PulsarClientException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
         
@@ -110,17 +118,59 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
 	}
 	
 	@Test
+    public void singleFlowFileAsyncTest() throws UnsupportedEncodingException, PulsarClientException {
+		
+		runner.setProperty(PublishPulsar.TOPIC, "my-topic");
+		runner.setProperty(PublishPulsar.ASYNC_ENABLED, Boolean.TRUE.toString());
+	
+		final String content = "some content";
+        runner.enqueue(content.getBytes("UTF-8"));
+        runner.run();
+        runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+
+        final MockFlowFile outFile = runner.getFlowFilesForRelationship(PublishPulsar.REL_SUCCESS).get(0);
+        outFile.assertContentEquals(content);
+        
+        // Verify that we sent the data to my-topic.
+        verify(mockClient, times(1)).createProducer("my-topic");
+        
+        // Verify that the send method on the producer was called with the expected content
+        verify(mockProducer, times(1)).sendAsync(content.getBytes());
+	}
+	
+	@Test
 	public void multipleFlowFilesTest() throws UnsupportedEncodingException, PulsarClientException {
 		
 		runner.setProperty(PublishPulsar.TOPIC, "my-topic");
 		final String content = "some content";
 		
-		runner.enqueue(content.getBytes("UTF-8"));
-		runner.run(1, false);
-        runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+		// Hack, since runner.run(20, false); doesn't work as advertised
+		for (int idx = 0; idx < 20; idx++) {
+			runner.enqueue(content.getBytes("UTF-8"));
+			runner.run();
+			runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+		}
         
         // Verify that the send method on the producer was called with the expected content
-        verify(mockProducer, times(1)).send(content.getBytes());
+        verify(mockProducer, times(20)).send(content.getBytes());
+	}
+	
+	@Test
+	public void multipleFlowFilesAsyncTest() throws UnsupportedEncodingException, PulsarClientException {
+		
+		runner.setProperty(PublishPulsar.TOPIC, "my-async-topic");
+		runner.setProperty(PublishPulsar.ASYNC_ENABLED, Boolean.TRUE.toString());
+		final String content = "some content";
+		
+		// Hack, since runner.run(20, false); doesn't work as advertised
+		for (int idx = 0; idx < 20; idx++) {
+			runner.enqueue(content.getBytes("UTF-8"));
+			runner.run();
+			runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+		}
+        
+        // Verify that the send method on the producer was called with the expected content
+        verify(mockProducer, times(20)).sendAsync(content.getBytes());
 	}
 
 }
