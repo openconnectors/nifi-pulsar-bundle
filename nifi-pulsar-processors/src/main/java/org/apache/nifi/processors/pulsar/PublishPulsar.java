@@ -20,10 +20,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -44,7 +42,9 @@ import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.pulsar.PulsarClientPool;
 import org.apache.nifi.pulsar.PulsarProducer;
+import org.apache.nifi.pulsar.cache.LRUCache;
 import org.apache.nifi.pulsar.pool.PulsarProducerFactory;
+import org.apache.nifi.pulsar.pool.ResourcePool;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StringUtils;
 import org.apache.pulsar.client.api.CompressionType;
@@ -162,8 +162,7 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 	private static final List<PropertyDescriptor> PROPERTIES;
     private static final Set<Relationship> RELATIONSHIPS;
      
-    // Reuse the same producer for a given topic
-    private Map<String, PulsarProducer> producers = new HashMap<String, PulsarProducer> ();
+    private LRUCache<String, PulsarProducer> producers;
     private ProducerConfiguration producerConfig;
     
     static {
@@ -200,13 +199,7 @@ public class PublishPulsar extends AbstractPulsarProcessor {
     @OnStopped
     public void cleanUp(final ProcessContext context) {
     		// Close all of the producers and invalidate them, so they get removed from the Resource Pool
-    		for (PulsarProducer producer : producers.values() ) {
-    			
-    			context.getProperty(PULSAR_CLIENT_SERVICE)
-    				.asControllerService(PulsarClientPool.class).invalidate(producer);
-    		}
-    		
-    		producers.clear();
+    		getProducerCache(context).clear();
     }
     
     
@@ -261,17 +254,39 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 	
 	private PulsarProducer getWrappedProducer(String topic, ProcessContext context) throws PulsarClientException, IllegalArgumentException {
 		
-		if (producers.containsKey(topic))
-			return producers.get(topic);
+		PulsarProducer producer = getProducerCache(context).get(topic);
 		
-		PulsarProducer producer = context.getProperty(PULSAR_CLIENT_SERVICE)
-				.asControllerService(PulsarClientPool.class).getProducer(getProducerProperties(context, topic));
+		if (producer != null)
+			return producer;
 		
-		if (producer != null) {
-			producers.put(topic, producer);
+		try {
+			producer = context.getProperty(PULSAR_CLIENT_SERVICE)
+					.asControllerService(PulsarClientPool.class)
+					.getProducerPool().acquire(getProducerProperties(context, topic));
+			
+			if (producer != null) {
+				producers.put(topic, producer);
+			}
+			
+			return producer;
+			
+		} catch (InterruptedException e) {
+			return null;
+		}		
+		
+	}
+	
+	private LRUCache<String, PulsarProducer> getProducerCache(ProcessContext context) {
+		if (producers == null) {
+			
+			ResourcePool<PulsarProducer> pool = context.getProperty(PULSAR_CLIENT_SERVICE)
+					.asControllerService(PulsarClientPool.class)
+					.getProducerPool();
+			
+			producers = new LRUCache<String, PulsarProducer> (20, pool);
 		}
 		
-		return producer;
+		return producers;
 	}
 	
 	private Properties getProducerProperties(ProcessContext context, String topic) {

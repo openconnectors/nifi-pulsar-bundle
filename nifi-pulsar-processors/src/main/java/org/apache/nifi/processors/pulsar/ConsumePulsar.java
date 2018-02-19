@@ -184,7 +184,8 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		if (consumer != null) {		
 			
     			context.getProperty(PULSAR_CLIENT_SERVICE)
-    				.asControllerService(PulsarClientPool.class).invalidate(consumer);  	
+    				.asControllerService(PulsarClientPool.class)
+    				.getConsumerPool().evict(consumer);  	
 		}
 		
 		consumer = null;
@@ -198,13 +199,18 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		final PulsarClientPool pulsarClientService = context.getProperty(PULSAR_CLIENT_SERVICE)
         		.asControllerService(PulsarClientPool.class);
 		
-		consumer = pulsarClientService.getConsumer(getConsumerProperties(context));
-		
-        if (consumer == null || consumer.getConsumer() == null) {
-        		throw new PulsarClientException("Unable to create Pulsar Consumer");
+		try {
+			consumer = pulsarClientService.getConsumerPool()
+					.acquire(getConsumerProperties(context));
+
+			if (consumer == null || consumer.getConsumer() == null) {
+				throw new PulsarClientException("Unable to create Pulsar Consumer");
+			}
+
+			return consumer;
+		} catch (final InterruptedException ex) {
+			return null;
 		}
-        
-        return consumer;
 	}
 	
 	private Properties getConsumerProperties(ProcessContext context) {
