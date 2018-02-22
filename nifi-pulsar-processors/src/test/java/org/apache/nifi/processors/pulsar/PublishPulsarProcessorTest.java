@@ -188,5 +188,19 @@ public class PublishPulsarProcessorTest extends AbstractPulsarProcessorTest {
         // Verify that the send method on the producer was called with the expected content
         verify(mockProducer, times(20)).sendAsync(content.getBytes());
 	}
+	
+	@Test
+	public void stressTest() throws UnsupportedEncodingException {
+		runner.setProperty(PublishPulsar.TOPIC, "my-async-topic");
+		runner.setProperty(PublishPulsar.ASYNC_ENABLED, Boolean.TRUE.toString());
+		final String content = "some content";
+		
+		for (int idx = 0; idx < 9999; idx++) {
+			runner.enqueue(content.getBytes("UTF-8"));
+			runner.run();
+			runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
+		}
+		
+	}
 
 }

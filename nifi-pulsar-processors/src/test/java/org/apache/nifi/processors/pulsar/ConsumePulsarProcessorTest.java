@@ -153,6 +153,10 @@ public class ConsumePulsarProcessorTest extends AbstractPulsarProcessorTest {
         }
         
         // Verify that every message was acknowledged
-        verify(mockConsumer, times(itertions)).acknowledge(mockMessage);
+        if (async) {
+        		verify(mockConsumer, times(itertions)).acknowledgeAsync(mockMessage);
+        } else {
+        		verify(mockConsumer, times(itertions)).acknowledge(mockMessage);
+        }
     }
 }

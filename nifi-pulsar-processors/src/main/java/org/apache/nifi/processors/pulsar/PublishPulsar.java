@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
@@ -60,8 +61,11 @@ import org.apache.pulsar.client.api.PulsarClientException;
     + "user-specified delimiter, such as a new-line. "
     + "The complementary NiFi processor for fetching messages is ConsumePulsar.")
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
-
+@WritesAttribute(attribute = "msg.count", description = "The number of messages that were sent to Pulsar for this FlowFile. This attribute is added only to "
+	    + "FlowFiles that are routed to success.")
 public class PublishPulsar extends AbstractPulsarProcessor {
+	
+	protected static final String MSG_COUNT = "msg.count";
 	
 	static final AllowableValue COMPRESSION_TYPE_NONE = new AllowableValue("NONE", "None", "No compression");
 	static final AllowableValue COMPRESSION_TYPE_LZ4 = new AllowableValue("LZ4", "LZ4", "Compress with LZ4 algorithm.");
@@ -245,8 +249,10 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 				this.send(producer, session, flowFile, messageContent);
 			}
 
-		} catch (final Exception e) {
-			logger.error("Failed to connect to Pulsar Server due to {}", new Object[]{e});                    
+		} catch (final PulsarClientException e) {
+			logger.error("Failed to connect to Pulsar Server due to {}", new Object[]{e});  
+			// Wait for 30 seconds before re-processing this message.
+			session.penalize(flowFile);
 			session.transfer(flowFile, REL_FAILURE);
 		} 
         	              
@@ -332,7 +338,12 @@ public class PublishPulsar extends AbstractPulsarProcessor {
     		MessageId msgId = producer.send(messageContent);
 
     		if (msgId != null) {
-			session.transfer(flowFile, REL_SUCCESS);        				        				
+    			
+    			flowFile = session.putAttribute(flowFile, MSG_COUNT, "1");
+    			session.adjustCounter("Messages Sent", 1, true);
+    			session.getProvenanceReporter().send(flowFile, "Sent message " + msgId + " to " + producer.getTopic() );
+			session.transfer(flowFile, REL_SUCCESS);     
+			
 		} else {
 			session.transfer(flowFile, REL_FAILURE);        								
 		}
@@ -340,8 +351,20 @@ public class PublishPulsar extends AbstractPulsarProcessor {
     }
     
     private void sendAsync(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) {
-    		// Fire and forget.
-    		producer.sendAsync(messageContent);
+    		
+    		producer.sendAsync(messageContent).handle((msgId, ex) -> {
+    		    if (msgId != null) {
+    		        return msgId;
+    		    } else {
+    		    		// TODO Communicate the error back up to the onTrigger method so we can invalidate this producer.
+    		    		getLogger().warn("Problem ", ex);
+    		        return null;
+    		    }
+    		});
+    		
+    		flowFile = session.putAttribute(flowFile, MSG_COUNT, "1");
+		session.adjustCounter("Messages Sent", 1, true);
+		session.getProvenanceReporter().send(flowFile, "Sent async message to " + producer.getTopic() );	
     		session.transfer(flowFile, REL_SUCCESS);
     	
     }

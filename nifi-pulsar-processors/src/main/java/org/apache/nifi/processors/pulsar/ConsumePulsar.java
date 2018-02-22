@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
@@ -50,6 +51,7 @@ import org.apache.pulsar.client.api.SubscriptionType;
 @CapabilityDescription("Consumes messages from Apache Pulsar "
         + "The complementary NiFi processor for sending messages is PublishPulsar.")
 @InputRequirement(InputRequirement.Requirement.INPUT_FORBIDDEN)
+@SupportsBatching
 public class ConsumePulsar extends AbstractPulsarProcessor {
 	
 	static final AllowableValue EXCLUSIVE = new AllowableValue("Exclusive", "Exclusive", "There can be only 1 consumer on the same topic with the same subscription name");
@@ -172,6 +174,7 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 			}
 		} catch (PulsarClientException e) {
 			getLogger().error("Unable to consume from Pulsar Topic ", e);
+			context.yield();
 			throw new ProcessException(e);
 		}
                 
@@ -258,13 +261,11 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 				});
 				
 			}
+			
+			session.getProvenanceReporter().receive(flowFile, "From " + context.getProperty(TOPIC).getValue());
 			session.transfer(flowFile, REL_SUCCESS);
 			session.commit();
-			try {
-				consumer.acknowledge(msg);
-			} catch (PulsarClientException e) {
-				getLogger().error("Unable to acknowledge message.", e);
-			}
+			consumer.acknowledgeAsync(msg);
 			
 		});
     }
@@ -294,7 +295,7 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
         				out.write(value);
         			});
 
-        			// session.getProvenanceReporter().receive(flowFile, context.getProperty(URL).getValue());
+        			session.getProvenanceReporter().receive(flowFile, "From " + context.getProperty(TOPIC).getValue());
                 session.transfer(flowFile, REL_SUCCESS);
                 logger.info("Created {} from {} messages received from Pulsar Server and transferred to 'success'",
                             new Object[]{flowFile, 1});
@@ -314,13 +315,15 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
                  * is preferred over potential data loss.
                  */
                 getLogger().info("Acknowledging message " + msg.getMessageId());
-                consumer.acknowledge(msg);
+                consumer.acknowledge(msg);                
+                
         		} else {
         			// We didn't consume any data, so
         			session.commit();
         		}
 					
 		} catch (PulsarClientException e) {	
+			context.yield();
 			session.rollback();			
 		}
 
