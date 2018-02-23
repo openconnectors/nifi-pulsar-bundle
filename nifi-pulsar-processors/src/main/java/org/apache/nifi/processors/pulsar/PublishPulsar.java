@@ -87,8 +87,8 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 	public static final PropertyDescriptor ASYNC_ENABLED = new PropertyDescriptor.Builder()
             .name("Async Enabled")
             .description("Control whether the messages will be sent asyncronously or not. Messages sent"
-            		+ "syncronously will be acknowledged immediately before processing the next message, while"
-            		+ "asyncronous messages will be acknowledged after the Pulsar broker responds.")
+            		+ " syncronously will be acknowledged immediately before processing the next message, while"
+            		+ " asyncronous messages will be acknowledged after the Pulsar broker responds.")
             .required(true)
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .defaultValue("false")
@@ -251,13 +251,49 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 
 		} catch (final PulsarClientException e) {
 			logger.error("Failed to connect to Pulsar Server due to {}", new Object[]{e});  
-			// Wait for 30 seconds before re-processing this message.
 			session.penalize(flowFile);
 			session.transfer(flowFile, REL_FAILURE);
 		} 
         	              
 	}
 	
+
+    private void send(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) throws PulsarClientException {
+    		
+    		MessageId msgId = producer.send(messageContent);
+
+    		if (msgId != null) {
+    			
+    			flowFile = session.putAttribute(flowFile, MSG_COUNT, "1");
+    			session.adjustCounter("Messages Sent", 1, true);
+    			session.getProvenanceReporter().send(flowFile, "Sent message " + msgId + " to " + producer.getTopic() );
+			session.transfer(flowFile, REL_SUCCESS);     
+			
+		} else {
+			session.transfer(flowFile, REL_FAILURE);        								
+		}
+    
+    }
+    
+    private void sendAsync(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) {
+    		
+    		producer.sendAsync(messageContent).handle((msgId, ex) -> {
+    		    if (msgId != null) {
+    		        return msgId;
+    		    } else {
+    		    		// TODO Communicate the error back up to the onTrigger method so we can invalidate this producer.
+    		    		getLogger().warn("Problem ", ex);
+    		        return null;
+    		    }
+    		});
+    		
+    		flowFile = session.putAttribute(flowFile, MSG_COUNT, "1");
+		session.adjustCounter("Messages Sent", 1, true);
+		session.getProvenanceReporter().send(flowFile, "Sent async message to " + producer.getTopic() );	
+    		session.transfer(flowFile, REL_SUCCESS);
+    	
+    }
+    
 	private PulsarProducer getWrappedProducer(String topic, ProcessContext context) throws PulsarClientException, IllegalArgumentException {
 		
 		PulsarProducer producer = getProducerCache(context).get(topic);
@@ -333,39 +369,4 @@ public class PublishPulsar extends AbstractPulsarProcessor {
 		return producerConfig;
     }
 	
-    private void send(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) throws PulsarClientException {
-    		
-    		MessageId msgId = producer.send(messageContent);
-
-    		if (msgId != null) {
-    			
-    			flowFile = session.putAttribute(flowFile, MSG_COUNT, "1");
-    			session.adjustCounter("Messages Sent", 1, true);
-    			session.getProvenanceReporter().send(flowFile, "Sent message " + msgId + " to " + producer.getTopic() );
-			session.transfer(flowFile, REL_SUCCESS);     
-			
-		} else {
-			session.transfer(flowFile, REL_FAILURE);        								
-		}
-    
-    }
-    
-    private void sendAsync(Producer producer, ProcessSession session, FlowFile flowFile, byte[] messageContent) {
-    		
-    		producer.sendAsync(messageContent).handle((msgId, ex) -> {
-    		    if (msgId != null) {
-    		        return msgId;
-    		    } else {
-    		    		// TODO Communicate the error back up to the onTrigger method so we can invalidate this producer.
-    		    		getLogger().warn("Problem ", ex);
-    		        return null;
-    		    }
-    		});
-    		
-    		flowFile = session.putAttribute(flowFile, MSG_COUNT, "1");
-		session.adjustCounter("Messages Sent", 1, true);
-		session.getProvenanceReporter().send(flowFile, "Sent async message to " + producer.getTopic() );	
-    		session.transfer(flowFile, REL_SUCCESS);
-    	
-    }
 }

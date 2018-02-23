@@ -22,13 +22,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
-import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
+import org.apache.nifi.annotation.lifecycle.OnUnscheduled;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
@@ -51,7 +58,6 @@ import org.apache.pulsar.client.api.SubscriptionType;
 @CapabilityDescription("Consumes messages from Apache Pulsar "
         + "The complementary NiFi processor for sending messages is PublishPulsar.")
 @InputRequirement(InputRequirement.Requirement.INPUT_FORBIDDEN)
-@SupportsBatching
 public class ConsumePulsar extends AbstractPulsarProcessor {
 	
 	static final AllowableValue EXCLUSIVE = new AllowableValue("Exclusive", "Exclusive", "There can be only 1 consumer on the same topic with the same subscription name");
@@ -78,11 +84,20 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 	public static final PropertyDescriptor ASYNC_ENABLED = new PropertyDescriptor.Builder()
             .name("Async Enabled")
             .description("Control whether the messages will be consumed asyncronously or not. Messages consumed"
-            		+ "syncronously will be acknowledged immediately before processing the next message, while"
-            		+ "asyncronous messages will be acknowledged after the Pulsar broker responds.")
+            		+ " syncronously will be acknowledged immediately before processing the next message, while"
+            		+ " asyncronous messages will be acknowledged after the Pulsar broker responds.")
             .required(true)
             .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
             .defaultValue("false")
+            .build();
+	
+	public static final PropertyDescriptor MAX_ASYNC_REQUESTS = new PropertyDescriptor.Builder()
+            .name("Maximum Async Requests")
+            .description("The maximum number of outstanding asynchronous consumer requests for this processor. "
+            		+ "Each asynchronous call requires memory, so avoid setting this value to high.")
+            .required(false)
+            .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+            .defaultValue("50")
             .build();
 	
 	public static final PropertyDescriptor ACK_TIMEOUT = new PropertyDescriptor.Builder()
@@ -135,12 +150,17 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
     private PulsarConsumer consumer;
     private ConsumerConfiguration consumerConfig;
     
+    // Pool for running multiple consume Async requests
+    ExecutorService pool;
+    ExecutorCompletionService<Message> completionService;
+    
     static {
         final List<PropertyDescriptor> properties = new ArrayList<>();
         properties.add(PULSAR_CLIENT_SERVICE);
         properties.add(TOPIC);
         properties.add(SUBSCRIPTION);
         properties.add(ASYNC_ENABLED);
+        properties.add(MAX_ASYNC_REQUESTS);
         properties.add(ACK_TIMEOUT);
         properties.add(PRIORITY_LEVEL);
         properties.add(RECEIVER_QUEUE_SIZE);
@@ -162,13 +182,30 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
         return PROPERTIES;
     }
+    
+    @OnScheduled
+    public void init(ProcessContext context) {
+    		pool = Executors.newFixedThreadPool(context.getProperty(MAX_ASYNC_REQUESTS).asInteger());
+    		completionService = new ExecutorCompletionService<>(pool);
+    }
+    
+    @OnUnscheduled
+    public void shutDown() {
+    		// Stop all the async consumers
+    		pool.shutdownNow();
+    }
 	
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
 	
 		try {
 			if (context.getProperty(ASYNC_ENABLED).isSet() && context.getProperty(ASYNC_ENABLED).asBoolean()) {
+				// Launch consumers
 				consumeAsync(context, session);
+				
+				// Handle completed consumers
+				handleAsync(context, session);
+				
 			} else {
 				consume(context, session);
 			}
@@ -180,6 +217,34 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
                 
 	}
 	
+	private void handleAsync(ProcessContext context, ProcessSession session) {
+		
+		try {
+			Future<Message> done = completionService.take();
+			Message msg = done.get();
+			
+			if (msg != null) {
+				FlowFile flowFile = null;
+    				final byte[] value = msg.getData();
+    				if (value != null && value.length > 0) {
+    					flowFile = session.create();
+    					flowFile = session.write(flowFile, out -> {
+    						out.write(value);
+    					});    	    				
+    				}
+			
+    				session.getProvenanceReporter().receive(flowFile, "From " + context.getProperty(TOPIC).getValue());
+    				session.transfer(flowFile, REL_SUCCESS);
+    				session.commit();
+    				getWrappedConsumer(context).getConsumer().acknowledgeAsync(msg);   
+			}
+			
+		} catch (InterruptedException | ExecutionException | PulsarClientException e) {
+			getLogger().error("Trouble consuming messages ", e);
+		}
+		
+	}
+
 	@OnStopped
     public void close(final ProcessContext context) {  		
 		
@@ -194,80 +259,22 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		consumer = null;
     }
 	
-	private PulsarConsumer getWrappedConsumer(ProcessContext context) throws PulsarClientException {
-		
-		if (consumer != null)
-			return consumer;
-		
-		final PulsarClientPool pulsarClientService = context.getProperty(PULSAR_CLIENT_SERVICE)
-        		.asControllerService(PulsarClientPool.class);
-		
-		try {
-			consumer = pulsarClientService.getConsumerPool()
-					.acquire(getConsumerProperties(context));
-
-			if (consumer == null || consumer.getConsumer() == null) {
-				throw new PulsarClientException("Unable to create Pulsar Consumer");
-			}
-
-			return consumer;
-		} catch (final InterruptedException ex) {
-			return null;
-		}
-	}
-	
-	private Properties getConsumerProperties(ProcessContext context) {
-		
-		Properties props = new Properties();
-		props.put(PulsarConsumerFactory.TOPIC_NAME, context.getProperty(TOPIC).getValue());
-		props.put(PulsarConsumerFactory.SUBSCRIPTION_NAME, context.getProperty(SUBSCRIPTION).getValue());		
-		props.put(PulsarConsumerFactory.CONSUMER_CONFIG, getConsumerConfig(context));		
-		return props;
-	}
-	
-    private ConsumerConfiguration getConsumerConfig(ProcessContext context) {
-    	
-		if (consumerConfig == null) {
-			consumerConfig = new ConsumerConfiguration();
-			
-			if (context.getProperty(ACK_TIMEOUT).isSet())
-				consumerConfig.setAckTimeout(context.getProperty(ACK_TIMEOUT).asLong(), TimeUnit.MILLISECONDS);
-			
-			if (context.getProperty(PRIORITY_LEVEL).isSet())
-				consumerConfig.setPriorityLevel(context.getProperty(PRIORITY_LEVEL).asInteger());
-			
-			if (context.getProperty(RECEIVER_QUEUE_SIZE).isSet())
-				consumerConfig.setReceiverQueueSize(context.getProperty(RECEIVER_QUEUE_SIZE).asInteger());
-			
-			if (context.getProperty(SUBSCRIPTION_TYPE).isSet())
-				consumerConfig.setSubscriptionType(SubscriptionType.valueOf(context.getProperty(SUBSCRIPTION_TYPE).getValue()));
-		}
-		
-		return consumerConfig;
-    }
-
-	
+	/*
+	 * For now let's assume that this processor will be configured to run for a longer
+	 * duration than 0 milliseconds. So we will be grabbing as many messages off the topic 
+	 * as possible and committing them as FlowFiles
+	 */
     private void consumeAsync(ProcessContext context, ProcessSession session) throws PulsarClientException {
     	
     		Consumer consumer = getWrappedConsumer(context).getConsumer();
     		
-    		consumer.receiveAsync().thenAccept(msg -> {
-			FlowFile flowFile = null;
-			final byte[] value = msg.getData();
-			if (value != null && value.length > 0) {
-				flowFile = session.create();
-				flowFile = session.write(flowFile, out -> {
-					out.write(value);
-				});
-				
-			}
-			
-			session.getProvenanceReporter().receive(flowFile, "From " + context.getProperty(TOPIC).getValue());
-			session.transfer(flowFile, REL_SUCCESS);
-			session.commit();
-			consumer.acknowledgeAsync(msg);
-			
-		});
+    		completionService.submit(new Callable<Message>() {
+    	        @Override
+    	        public Message call() throws Exception {
+    	        		return consumer.receiveAsync().get();
+    	        }
+    	      });
+    		
     }
     
 	/*
@@ -328,5 +335,57 @@ public class ConsumePulsar extends AbstractPulsarProcessor {
 		}
 
 	}
+
+	private PulsarConsumer getWrappedConsumer(ProcessContext context) throws PulsarClientException {
+		
+		if (consumer != null)
+			return consumer;
+		
+		final PulsarClientPool pulsarClientService = context.getProperty(PULSAR_CLIENT_SERVICE)
+        		.asControllerService(PulsarClientPool.class);
+		
+		try {
+			consumer = pulsarClientService.getConsumerPool()
+					.acquire(getConsumerProperties(context));
+
+			if (consumer == null || consumer.getConsumer() == null) {
+				throw new PulsarClientException("Unable to create Pulsar Consumer");
+			}
+
+			return consumer;
+		} catch (final InterruptedException ex) {
+			return null;
+		}
+	}
 	
+	private Properties getConsumerProperties(ProcessContext context) {
+		
+		Properties props = new Properties();
+		props.put(PulsarConsumerFactory.TOPIC_NAME, context.getProperty(TOPIC).getValue());
+		props.put(PulsarConsumerFactory.SUBSCRIPTION_NAME, context.getProperty(SUBSCRIPTION).getValue());		
+		props.put(PulsarConsumerFactory.CONSUMER_CONFIG, getConsumerConfig(context));		
+		return props;
+	}
+	
+    private ConsumerConfiguration getConsumerConfig(ProcessContext context) {
+    	
+		if (consumerConfig == null) {
+			consumerConfig = new ConsumerConfiguration();
+			
+			if (context.getProperty(ACK_TIMEOUT).isSet())
+				consumerConfig.setAckTimeout(context.getProperty(ACK_TIMEOUT).asLong(), TimeUnit.MILLISECONDS);
+			
+			if (context.getProperty(PRIORITY_LEVEL).isSet())
+				consumerConfig.setPriorityLevel(context.getProperty(PRIORITY_LEVEL).asInteger());
+			
+			if (context.getProperty(RECEIVER_QUEUE_SIZE).isSet())
+				consumerConfig.setReceiverQueueSize(context.getProperty(RECEIVER_QUEUE_SIZE).asInteger());
+			
+			if (context.getProperty(SUBSCRIPTION_TYPE).isSet())
+				consumerConfig.setSubscriptionType(SubscriptionType.valueOf(context.getProperty(SUBSCRIPTION_TYPE).getValue()));
+		}
+		
+		return consumerConfig;
+    }
+
 }
