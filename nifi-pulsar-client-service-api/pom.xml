@@ -18,24 +18,28 @@
 
     <parent>
         <groupId>org.apache.nifi</groupId>
-        <artifactId>nifi-nar-bundles</artifactId>
+        <artifactId>nifi-pulsar-bundle</artifactId>
         <version>1.9.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>nifi-pulsar-bundle</artifactId>
-    <packaging>pom</packaging>
+    <artifactId>nifi-pulsar-client-service-api</artifactId>
+    <packaging>jar</packaging>
 
-    <modules>
-        <module>nifi-pulsar-processors</module>
-        <module>nifi-pulsar-nar</module>
-        <module>nifi-pulsar-client-service-api</module>
-        <module>nifi-pulsar-client-service</module>
-        <module>nifi-pulsar-client-service-nar</module>
-    </modules>
-    
-    <properties>
-    	<pulsar.version>2.3.0</pulsar.version>
-    </properties>
-    
-    <description>A bundle of processors that can store and retrieve data from Apache Pulsar</description>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pulsar</groupId>
+            <artifactId>pulsar-client</artifactId>
+            <version>${pulsar.version}</version>
+		</dependency>
+        <dependency>
+        	<groupId>org.apache.commons</groupId>
+        	<artifactId>commons-collections4</artifactId>
+        	<version>4.2</version>
+        </dependency>
+    </dependencies>
 </project>

@@ -14,28 +14,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.nifi.processors.pulsar;
+package org.apache.nifi.processors.pulsar.pubsub;
 
-import org.apache.nifi.processors.pulsar.pubsub.mocks.MockPulsarClientService;
+import org.apache.nifi.processors.pulsar.AbstractPulsarProcessorTest;
 import org.apache.nifi.reporting.InitializationException;
-import org.apache.nifi.util.TestRunner;
-import org.junit.After;
+import org.apache.nifi.util.TestRunners;
 
-public abstract class AbstractPulsarProcessorTest<T> {
+import org.apache.pulsar.client.api.Producer;
 
-    protected TestRunner runner;
+import org.junit.Before;
+import org.mockito.Mock;
+import static org.mockito.Mockito.mock;
 
-    protected MockPulsarClientService<T> mockClientService;
+public class TestPublishPulsar extends AbstractPulsarProcessorTest<byte[]> {
 
-    protected void addPulsarClientService() throws InitializationException {
-        mockClientService = new MockPulsarClientService<T>();
-        runner.addControllerService("Pulsar Client Service", mockClientService);
-        runner.enableControllerService(mockClientService);
-        runner.setProperty(AbstractPulsarConsumerProcessor.PULSAR_CLIENT_SERVICE, "Pulsar Client Service");
-    }
+    @Mock
+    protected Producer<byte[]> mockProducer;
 
-    @After
-    public final void validate() {
-        org.mockito.Mockito.validateMockitoUsage();
+    @Before
+    public void init() throws InitializationException {
+        mockProducer = mock(Producer.class);
+        runner = TestRunners.newTestRunner(PublishPulsar.class);
+        addPulsarClientService();
     }
 }

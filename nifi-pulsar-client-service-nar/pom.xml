@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed to the Apache Software Foundation (ASF) under one or more
   contributor license agreements. See the NOTICE file distributed with
@@ -14,28 +13,29 @@
   limitations under the License.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>org.apache.nifi</groupId>
-        <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.9.0-SNAPSHOT</version>
-    </parent>
-
+  <modelVersion>4.0.0</modelVersion>
+  
+  <parent>
+    <groupId>org.apache.nifi</groupId>
     <artifactId>nifi-pulsar-bundle</artifactId>
-    <packaging>pom</packaging>
-
-    <modules>
-        <module>nifi-pulsar-processors</module>
-        <module>nifi-pulsar-nar</module>
-        <module>nifi-pulsar-client-service-api</module>
-        <module>nifi-pulsar-client-service</module>
-        <module>nifi-pulsar-client-service-nar</module>
-    </modules>
-    
-    <properties>
-    	<pulsar.version>2.3.0</pulsar.version>
-    </properties>
-    
-    <description>A bundle of processors that can store and retrieve data from Apache Pulsar</description>
+    <version>1.9.0-SNAPSHOT</version>
+  </parent>
+  
+  <artifactId>nifi-pulsar-client-service-nar</artifactId>
+  <packaging>nar</packaging>
+  
+  <dependencies>
+    <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-standard-services-api-nar</artifactId>
+            <version>1.9.0-SNAPSHOT</version>
+            <type>nar</type>
+    </dependency>
+  	<dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-pulsar-client-service-api</artifactId>
+            <version>1.9.0-SNAPSHOT</version>
+        </dependency>
+  </dependencies>
+  
 </project>
