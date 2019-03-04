@@ -2,4 +2,6 @@
 .settings/
 */.classpath
 */.gitignore
+*/target/
 /target/
+.DS_Store
