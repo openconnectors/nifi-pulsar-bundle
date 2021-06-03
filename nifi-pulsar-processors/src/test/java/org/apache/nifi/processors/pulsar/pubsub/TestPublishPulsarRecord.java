@@ -18,11 +18,12 @@ package org.apache.nifi.processors.pulsar.pubsub;
 
 import static org.apache.nifi.processors.pulsar.pubsub.PublishPulsarRecord.RECORD_READER;
 import static org.apache.nifi.processors.pulsar.pubsub.PublishPulsarRecord.RECORD_WRITER;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -78,10 +79,10 @@ public class TestPublishPulsarRecord extends AbstractPulsarProcessorTest<byte[]>
         runner.setProperty(AbstractPulsarProducerProcessor.TOPIC, "${topic}");
 
         final String content = "some content";
-        Map<String, String> attributes = new HashMap<String, String>();
+        Map<String, String> attributes = new HashMap<>();
         attributes.put(AbstractPulsarProducerProcessor.TOPIC.getName(), "");
 
-        runner.enqueue(content.getBytes("UTF-8"), attributes );
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8), attributes );
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsarRecord.REL_FAILURE);
 
@@ -94,10 +95,10 @@ public class TestPublishPulsarRecord extends AbstractPulsarProcessorTest<byte[]>
         runner.setProperty(AbstractPulsarProducerProcessor.TOPIC, "${topic}");
 
         final String content = "Mary Jane, 32";
-        Map<String, String> attributes = new HashMap<String, String>();
+        Map<String, String> attributes = new HashMap<>();
         attributes.put("topic", TOPIC_NAME);
 
-        runner.enqueue(content.getBytes("UTF-8"), attributes );
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8), attributes );
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsarRecord.REL_SUCCESS);
 

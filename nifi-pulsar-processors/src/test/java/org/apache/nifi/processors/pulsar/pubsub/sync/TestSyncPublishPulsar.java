@@ -16,12 +16,13 @@
  */
 package org.apache.nifi.processors.pulsar.pubsub.sync;
 
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -49,7 +50,7 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
        runner.setProperty(PublishPulsar.TOPIC, "my-topic");
 
        final String content = "some content";
-       runner.enqueue(content.getBytes("UTF-8"));
+       runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
        runner.run();
        runner.assertAllFlowFilesTransferred(PublishPulsar.REL_FAILURE);
     }
@@ -62,7 +63,7 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
         Map<String, String> attributes = new HashMap<String, String>();
         attributes.put("topic", null);
 
-        runner.enqueue(content.getBytes("UTF-8"), attributes );
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8), attributes );
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_FAILURE);
 
@@ -81,7 +82,7 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
         Map<String, String> attributes = new HashMap<String, String>();
         attributes.put("topic", "topic-b");
 
-        runner.enqueue(content.getBytes("UTF-8"), attributes );
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8), attributes );
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
 
@@ -96,7 +97,7 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
        runner.setProperty(PublishPulsar.TOPIC, "my-topic");
 
        final String content = "some content";
-       runner.enqueue(content.getBytes("UTF-8"));
+       runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
        runner.run();
        runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
 
@@ -117,7 +118,7 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
         runner.setProperty(PublishPulsar.TOPIC, "my-topic");
         final String content = "some content";
         for (int idx = 0; idx < 20; idx++) {
-            runner.enqueue(content.getBytes("UTF-8"));
+            runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
             runner.run();
             runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
         }
@@ -134,13 +135,13 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
         runner.setProperty(PublishPulsar.TOPIC, "my-topic");
         runner.setProperty(PublishPulsar.MESSAGE_DEMARCATOR, demarcator);
 
-        final StringBuffer sb = new StringBuffer();
+        final StringBuilder sb = new StringBuilder();
 
         for (int idx = 0; idx < 20; idx++) {
            sb.append(content).append(demarcator);
         }
 
-        runner.enqueue(sb.toString().getBytes("UTF-8"));
+        runner.enqueue(sb.toString().getBytes(StandardCharsets.UTF_8));
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
         verify(mockClientService.getMockProducer(), times(20)).send(content.getBytes());

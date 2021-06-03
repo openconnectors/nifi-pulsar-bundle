@@ -38,16 +38,16 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
 import org.mockito.ArgumentMatcher;
-import org.mockito.Matchers;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyLong;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 
 public class MockPulsarClientService<T> extends AbstractControllerService implements PulsarClientService {
@@ -146,7 +146,7 @@ public class MockPulsarClientService<T> extends AbstractControllerService implem
 
     private void defineDefaultProducerBehavior() {
         try {
-           when(mockProducer.send(Matchers.argThat(new ArgumentMatcher<T>() {
+           when(mockProducer.send(ArgumentMatchers.argThat(new ArgumentMatcher<T>() {
                 @Override
                 public boolean matches(Object argument) {
                     return true;
@@ -157,7 +157,7 @@ public class MockPulsarClientService<T> extends AbstractControllerService implem
                 return mock(MessageId.class);
             });
 
-            when(mockProducer.sendAsync(Matchers.argThat(new ArgumentMatcher<T>() {
+            when(mockProducer.sendAsync(ArgumentMatchers.argThat(new ArgumentMatcher<T>() {
                 @Override
                 public boolean matches(Object argument) {
                     return true;
