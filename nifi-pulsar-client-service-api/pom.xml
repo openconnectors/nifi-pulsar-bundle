@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-pulsar-bundle</artifactId>
-        <version>1.9.0-SNAPSHOT</version>
+        <version>1.13.2</version>
     </parent>
 
     <artifactId>nifi-pulsar-client-service-api</artifactId>
@@ -29,13 +29,19 @@
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-api</artifactId>
+            <version>1.13.2</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.pulsar</groupId>
-            <artifactId>pulsar-client</artifactId>
+            <artifactId>pulsar-client-original</artifactId>
             <version>${pulsar.version}</version>
 		</dependency>
+        <dependency>
+            <groupId>org.apache.pulsar</groupId>
+            <artifactId>pulsar-client-auth-athenz</artifactId>
+            <version>${pulsar.version}</version>
+        </dependency>
         <dependency>
         	<groupId>org.apache.commons</groupId>
         	<artifactId>commons-collections4</artifactId>

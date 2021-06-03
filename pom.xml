@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.9.0-SNAPSHOT</version>
+        <version>1.13.2</version>
     </parent>
 
     <artifactId>nifi-pulsar-bundle</artifactId>
@@ -34,8 +34,33 @@
     </modules>
     
     <properties>
-    	<pulsar.version>2.3.0</pulsar.version>
+    	<pulsar.version>2.7.2</pulsar.version>
     </properties>
     
     <description>A bundle of processors that can store and retrieve data from Apache Pulsar</description>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <version>0.13</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <configuration>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.codehaus.groovy</groupId>
+                        <artifactId>groovy-eclipse-batch</artifactId>
+                        <version>2.5.6-01</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
 </project>

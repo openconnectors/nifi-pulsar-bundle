@@ -30,17 +30,17 @@ import org.apache.nifi.util.MockFlowFile;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.junit.Test;
 import org.mockito.ArgumentMatcher;
-import org.mockito.Matchers;
+import org.mockito.ArgumentMatchers;
 
 public class TestAsyncPublishPulsarRecord extends TestPublishPulsarRecord {
 
     @Test
     public void pulsarClientExceptionTest() throws PulsarClientException {
-       when(mockClientService.getMockProducer().sendAsync(Matchers.argThat(new ArgumentMatcher<byte[]>() {
-            @Override
-            public boolean matches(Object argument) {
-                return true;
-            }
+       when(mockClientService.getMockProducer().sendAsync(ArgumentMatchers.argThat(new ArgumentMatcher<byte[]>() {
+           @Override
+           public boolean matches(byte[] bytes) {
+               return true;
+           }
         }))).thenThrow(PulsarClientException.class);
 
        final String content = "Mary Jane, 32";

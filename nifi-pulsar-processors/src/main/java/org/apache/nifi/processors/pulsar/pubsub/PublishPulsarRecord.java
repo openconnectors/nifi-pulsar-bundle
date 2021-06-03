@@ -129,13 +129,13 @@ public class PublishPulsarRecord extends AbstractPulsarProducerProcessor<byte[]>
         final InputStream in = session.read(flowFile);
 
         try {
-            final RecordReader reader = readerFactory.createRecordReader(attributes, in, getLogger());
+            final RecordReader reader = readerFactory.createRecordReader(flowFile, in, getLogger());
             final RecordSet recordSet = reader.createRecordSet();
             final RecordSchema schema = writerFactory.getSchema(attributes, recordSet.getSchema());
             final boolean asyncFlag = (context.getProperty(ASYNC_ENABLED).isSet() && context.getProperty(ASYNC_ENABLED).asBoolean());
 
             try {
-                messagesSent.addAndGet(send(producer, writerFactory, schema, reader, topic, asyncFlag));
+                messagesSent.addAndGet(send(producer, writerFactory, schema, reader, topic, asyncFlag, flowFile));
                 session.putAttribute(flowFile, MSG_COUNT, messagesSent.get() + "");
                 session.putAttribute(flowFile, TOPIC_NAME, topic);
                 session.adjustCounter("Messages Sent", messagesSent.get(), true);
@@ -155,7 +155,7 @@ public class PublishPulsarRecord extends AbstractPulsarProducerProcessor<byte[]>
     }
 
     private int send(final Producer<byte[]> producer, final RecordSetWriterFactory writerFactory, final RecordSchema schema, final RecordReader reader,
-            String topic, boolean asyncFlag) throws IOException, SchemaNotFoundException, InterruptedException {
+            String topic, boolean asyncFlag, FlowFile flowFile) throws IOException, SchemaNotFoundException, InterruptedException {
 
         final RecordSet recordSet = reader.createRecordSet();
         final ByteArrayOutputStream baos = new ByteArrayOutputStream(1024);
@@ -167,7 +167,7 @@ public class PublishPulsarRecord extends AbstractPulsarProducerProcessor<byte[]>
                 recordCount++;
                 baos.reset();
 
-                try (final RecordSetWriter writer = writerFactory.createWriter(getLogger(), schema, baos)) {
+                try (final RecordSetWriter writer = writerFactory.createWriter(getLogger(), schema, baos, flowFile)) {
                     writer.write(record);
                     writer.flush();
                 }

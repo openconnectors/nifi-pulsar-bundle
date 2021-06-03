@@ -34,6 +34,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -62,7 +63,6 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.shade.org.apache.commons.collections.CollectionUtils;
 
 @CapabilityDescription("Consumes messages from Apache Pulsar. "
         + "The complementary NiFi processor for sending messages is PublishPulsarRecord. Please note that, at this time, "
@@ -185,8 +185,8 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
      * @throws PulsarClientException in the event we cannot communicate with the Pulsar broker.
      */
     private List<Message<byte[]>> getMessages(final Consumer<byte[]> consumer, int maxMessages) throws PulsarClientException {
-        List<Message<byte[]>> messages = new LinkedList<Message<byte[]>>();
-        Message<byte[]> msg = null;
+        List<Message<byte[]>> messages = new LinkedList<>();
+        Message<byte[]> msg;
         AtomicInteger msgCount = new AtomicInteger(0);
 
         while (((msg = consumer.receive(0, TimeUnit.SECONDS)) != null) && msgCount.get() < maxMessages) {
@@ -215,11 +215,11 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
           return;
        }
 
-       RecordSchema schema = getSchema(readerFactory, messages.get(0));
-       final BlockingQueue<Message<byte[]>> parseFailures = new LinkedBlockingQueue<Message<byte[]>>();
        FlowFile flowFile = session.create();
+       RecordSchema schema = getSchema(flowFile, readerFactory, messages.get(0));
+       final BlockingQueue<Message<byte[]>> parseFailures = new LinkedBlockingQueue<>();
        OutputStream rawOut = session.write(flowFile);
-       final RecordSetWriter writer = getRecordWriter(writerFactory, schema, rawOut);
+       final RecordSetWriter writer = getRecordWriter(writerFactory, schema, rawOut, flowFile);
 
        // We were unable to determine the schema, therefore we cannot parse the messages
        if (schema == null || writer == null) {
@@ -235,7 +235,7 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
                messages.forEach(msg ->{
                    final InputStream in = new ByteArrayInputStream(msg.getValue());
                    try {
-                       RecordReader r = readerFactory.createRecordReader(Collections.emptyMap(), in, getLogger());
+                       RecordReader r = readerFactory.createRecordReader(flowFile, in, getLogger());
                        for (Record record = r.nextRecord(); record != null; record = r.nextRecord()) {
                           writer.write(record);
                        }
@@ -279,7 +279,7 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
         try {
            for (int idx = 0; idx < parseFailures.size(); idx++) {
               Message<byte[]> msg = parseFailures.poll(0, TimeUnit.MILLISECONDS);
-              if (msg.getValue() != null && msg.getValue().length > 0) {
+               if (msg != null && msg.getValue() != null && msg.getValue().length > 0) {
                  rawOut.write(msg.getValue());
                  if (idx < parseFailures.size() - 2) {
                    rawOut.write(demarcator);
@@ -300,10 +300,10 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
     protected void handleAsync(ProcessContext context, ProcessSession session, final Consumer<byte[]> consumer,
          final RecordReaderFactory readerFactory, RecordSetWriterFactory writerFactory, byte[] demarcator) throws PulsarClientException {
 
-        final Integer queryTimeout = context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
+        final int queryTimeout = context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
 
         try {
-             Future<List<Message<byte[]>>> done = null;
+             Future<List<Message<byte[]>>> done;
              do {
                  done = getConsumerService().poll(queryTimeout, TimeUnit.SECONDS);
 
@@ -320,13 +320,13 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
         }
     }
 
-    private RecordSchema getSchema(RecordReaderFactory readerFactory, Message<byte[]> msg) {
-        RecordSchema schema = null;
+    private RecordSchema getSchema(FlowFile flowFile,RecordReaderFactory readerFactory, Message<byte[]> msg) {
+        RecordSchema schema;
         InputStream in = null;
 
         try {
             in = new ByteArrayInputStream(msg.getValue());
-            schema = readerFactory.createRecordReader(Collections.emptyMap(), in, getLogger()).getSchema();
+            schema = readerFactory.createRecordReader(flowFile, in, getLogger()).getSchema();
         } catch (MalformedRecordException | IOException | SchemaNotFoundException e) {
            return null;
         } finally {
@@ -336,10 +336,10 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
         return schema;
     }
 
-    private RecordSetWriter getRecordWriter(RecordSetWriterFactory writerFactory, RecordSchema srcSchema, OutputStream out) {
+    private RecordSetWriter getRecordWriter(RecordSetWriterFactory writerFactory, RecordSchema srcSchema, OutputStream out, FlowFile flowFile) {
         try {
             RecordSchema writeSchema = writerFactory.getSchema(Collections.emptyMap(), srcSchema);
-            return writerFactory.createWriter(getLogger(), writeSchema, out);
+            return writerFactory.createWriter(getLogger(), writeSchema, out, flowFile);
         } catch (SchemaNotFoundException | IOException e) {
            return null;
         }

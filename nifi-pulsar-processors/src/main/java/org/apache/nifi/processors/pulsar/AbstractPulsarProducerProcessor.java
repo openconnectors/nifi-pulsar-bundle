@@ -29,6 +29,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
@@ -50,7 +51,6 @@ import org.apache.pulsar.client.api.MessageRoutingMode;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.shade.org.apache.commons.collections.CollectionUtils;
 
 public abstract class AbstractPulsarProducerProcessor<T> extends AbstractProcessor {
 
@@ -96,9 +96,9 @@ public abstract class AbstractPulsarProducerProcessor<T> extends AbstractProcess
     public static final PropertyDescriptor ASYNC_ENABLED = new PropertyDescriptor.Builder()
             .name("ASYNC_ENABLED")
             .displayName("Async Enabled")
-            .description("Control whether the messages will be sent asyncronously or not. Messages sent"
-                    + " syncronously will be acknowledged immediately before processing the next message, while"
-                    + " asyncronous messages will be acknowledged after the Pulsar broker responds. Running the"
+            .description("Control whether the messages will be sent asynchronously or not. Messages sent"
+                    + " synchronously will be acknowledged immediately before processing the next message, while"
+                    + " asynchronous messages will be acknowledged after the Pulsar broker responds. Running the"
                     + " processor with async enabled will result in increased the throughput at the risk of potential"
                     + " duplicate data being sent to the Pulsar broker.")
             .required(true)

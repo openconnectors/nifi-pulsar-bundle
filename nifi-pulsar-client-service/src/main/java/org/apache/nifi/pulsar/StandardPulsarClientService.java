@@ -19,11 +19,12 @@ package org.apache.nifi.pulsar;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnDisabled;
 import org.apache.nifi.annotation.lifecycle.OnEnabled;
 import org.apache.nifi.annotation.lifecycle.OnShutdown;
@@ -32,14 +33,17 @@ import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.pulsar.auth.PulsarClientAuthenticationService;
 import org.apache.nifi.reporting.InitializationException;
-import org.apache.nifi.ssl.SSLContextService;
 import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.UnsupportedAuthenticationException;
-import org.apache.pulsar.client.impl.auth.AuthenticationTls;
 
+@Tags({"Pulsar", "client", "pool"})
+@CapabilityDescription("Standard implementation of the PulsarClientService. "
+        + "Provides the ability to create Pulsar Producer / Consumer instances on demand, "
+        + "based on the configuration properties defined.")
 public class StandardPulsarClientService extends AbstractControllerService implements PulsarClientService {
 
     public static final PropertyDescriptor PULSAR_SERVICE_URL = new PropertyDescriptor.Builder()
@@ -158,12 +162,12 @@ public class StandardPulsarClientService extends AbstractControllerService imple
             .defaultValue("false")
             .build();
 
-    public static final PropertyDescriptor SSL_CONTEXT_SERVICE = new PropertyDescriptor.Builder()
-            .name("SSL_CONTEXT_SERVICE")
-            .displayName("SSL Context Service")
-            .description("Specifies the SSL Context Service to use for communicating with Pulsar.")
+    public static final PropertyDescriptor AUTHENTICATION_SERVICE = new PropertyDescriptor.Builder()
+            .name("AUTHENTICATION_SERVICE")
+            .displayName("Pulsar Client Authentication Service")
+            .description("Specifies the Service to use for authenticating with Pulsar.")
             .required(false)
-            .identifiesControllerService(SSLContextService.class)
+            .identifiesControllerService(PulsarClientAuthenticationService.class)
             .build();
 
     private static List<PropertyDescriptor> properties;
@@ -174,6 +178,7 @@ public class StandardPulsarClientService extends AbstractControllerService imple
     static {
         final List<PropertyDescriptor> props = new ArrayList<>();
         props.add(PULSAR_SERVICE_URL);
+        props.add(AUTHENTICATION_SERVICE);
         props.add(CONCURRENT_LOOKUP_REQUESTS);
         props.add(CONNECTIONS_PER_BROKER);
         props.add(IO_THREADS);
@@ -184,7 +189,6 @@ public class StandardPulsarClientService extends AbstractControllerService imple
         props.add(OPERATION_TIMEOUT);
         props.add(STATS_INTERVAL);
         props.add(USE_TCP_NO_DELAY);
-        props.add(SSL_CONTEXT_SERVICE);
         properties = Collections.unmodifiableList(props);
     }
 
@@ -256,16 +260,17 @@ public class StandardPulsarClientService extends AbstractControllerService imple
                 .enableTcpNoDelay(context.getProperty(USE_TCP_NO_DELAY).asBoolean());
 
         // Configure TLS
-        final SSLContextService sslContextService = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextService.class);
+        final PulsarClientAuthenticationService authenticationService =
+             context.getProperty(AUTHENTICATION_SERVICE)
+                .asControllerService(PulsarClientAuthenticationService.class);
 
-        if (sslContextService != null && sslContextService.isTrustStoreConfigured() && sslContextService.isKeyStoreConfigured()) {
-            Map<String, String> authParams = new HashMap<>();
-            authParams.put("tlsCertFile", sslContextService.getTrustStoreFile());
-            authParams.put("tlsKeyFile", sslContextService.getKeyStoreFile());
+        if (authenticationService != null) {
+            builder = builder.authentication(authenticationService.getAuthentication());
 
-            builder = builder.authentication(AuthenticationTls.class.getName(), authParams)
-                             .tlsTrustCertsFilePath(sslContextService.getTrustStoreFile());
-            secure = true;
+            if (StringUtils.isNotBlank(authenticationService.getTlsTrustCertsFilePath())) {
+                builder = builder.tlsTrustCertsFilePath(authenticationService.getTlsTrustCertsFilePath());
+                secure = true;
+            }
         }
 
         setPulsarBrokerRootURL(buildPulsarBrokerRootUrl(context.getProperty(PULSAR_SERVICE_URL).evaluateAttributeExpressions().getValue(), secure));
