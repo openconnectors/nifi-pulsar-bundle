@@ -82,7 +82,7 @@ public class TestPublishPulsarRecord extends AbstractPulsarProcessorTest<byte[]>
         Map<String, String> attributes = new HashMap<>();
         attributes.put(AbstractPulsarProducerProcessor.TOPIC.getName(), "");
 
-        runner.enqueue(content.getBytes(StandardCharsets.UTF_8), attributes );
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8), attributes);
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsarRecord.REL_FAILURE);
 

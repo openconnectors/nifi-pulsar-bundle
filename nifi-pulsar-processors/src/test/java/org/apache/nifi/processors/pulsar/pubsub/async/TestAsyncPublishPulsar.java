@@ -24,6 +24,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +46,7 @@ public class TestAsyncPublishPulsar extends TestPublishPulsar {
         runner.setProperty(PublishPulsar.ASYNC_ENABLED, Boolean.TRUE.toString());
 
         final String content = "some content";
-        runner.enqueue(content.getBytes("UTF-8"));
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
         runner.run();
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
 
@@ -72,7 +73,7 @@ public class TestAsyncPublishPulsar extends TestPublishPulsar {
            sb.append(content).append(demarcator);
         }
 
-        runner.enqueue(sb.toString().getBytes("UTF-8"));
+        runner.enqueue(sb.toString().getBytes(StandardCharsets.UTF_8));
         runner.run(10, true, true);
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
         verify(mockClientService.getMockProducer(), times(20)).sendAsync(content.getBytes());
@@ -89,7 +90,7 @@ public class TestAsyncPublishPulsar extends TestPublishPulsar {
         runner.addConnection(PublishPulsarRecord.REL_FAILURE);
 
         final String content = "some content";
-        runner.enqueue(content.getBytes("UTF-8"));
+        runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
         runner.run(5000, false, true);
         List<MockFlowFile> success = runner.getFlowFilesForRelationship("success");
         List<MockFlowFile> failures = runner.getFlowFilesForRelationship("failure");
@@ -111,7 +112,7 @@ public class TestAsyncPublishPulsar extends TestPublishPulsar {
         final String content = "some content";
 
         for (int idx = 0; idx < 20; idx++) {
-            runner.enqueue(content.getBytes("UTF-8"));
+            runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
         }
 
         runner.run(20, true, true);
@@ -131,12 +132,12 @@ public class TestAsyncPublishPulsar extends TestPublishPulsar {
         final String contentA = "topic A content";
         Map<String, String> attributesA = new HashMap<String, String>();
         attributesA.put("topic", "topic-a");
-        runner.enqueue(contentA.getBytes("UTF-8"), attributesA);
+        runner.enqueue(contentA.getBytes(StandardCharsets.UTF_8), attributesA);
 
         final String contentB = "topic B content";
         Map<String, String> attributesB = new HashMap<String, String>();
         attributesB.put("topic", "topic-b");
-        runner.enqueue(contentB.getBytes("UTF-8"), attributesB);
+        runner.enqueue(contentB.getBytes(StandardCharsets.UTF_8), attributesB);
 
         runner.run(2, true, true);
         runner.assertAllFlowFilesTransferred(PublishPulsar.REL_SUCCESS);
