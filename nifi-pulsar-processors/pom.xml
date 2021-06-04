@@ -55,7 +55,7 @@
 	    </dependency>
         <dependency>
             <groupId>org.apache.pulsar</groupId>
-            <artifactId>pulsar-client-original</artifactId>
+            <artifactId>pulsar-client</artifactId>
             <version>${pulsar.version}</version>
 		</dependency>
         <dependency>
