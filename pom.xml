@@ -34,7 +34,7 @@
     </modules>
     
     <properties>
-    	<pulsar.version>2.3.0</pulsar.version>
+    	<pulsar.version>2.7.2</pulsar.version>
     </properties>
     
     <description>A bundle of processors that can store and retrieve data from Apache Pulsar</description>
