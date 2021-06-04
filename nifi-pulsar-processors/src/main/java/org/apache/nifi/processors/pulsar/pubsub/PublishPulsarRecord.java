@@ -167,7 +167,7 @@ public class PublishPulsarRecord extends AbstractPulsarProducerProcessor<byte[]>
                 recordCount++;
                 baos.reset();
 
-                try (final RecordSetWriter writer = writerFactory.createWriter(getLogger(), schema, baos, flowFile)) {
+                try (final RecordSetWriter writer = writerFactory.createWriter(getLogger(), schema, baos)) {
                     writer.write(record);
                     writer.flush();
                 }

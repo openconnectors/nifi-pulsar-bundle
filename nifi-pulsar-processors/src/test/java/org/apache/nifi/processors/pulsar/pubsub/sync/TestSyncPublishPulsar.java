@@ -16,7 +16,7 @@
  */
 package org.apache.nifi.processors.pulsar.pubsub.sync;
 
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,15 +32,15 @@ import org.apache.nifi.util.MockFlowFile;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.junit.Test;
 import org.mockito.ArgumentMatcher;
-import org.mockito.ArgumentMatchers;
+import org.mockito.Matchers;
 
 public class TestSyncPublishPulsar extends TestPublishPulsar {
 
     @Test
     public void pulsarClientExceptionTest() throws PulsarClientException, UnsupportedEncodingException {
-       when(mockClientService.getMockProducer().send(ArgumentMatchers.argThat(new ArgumentMatcher<byte[]>() {
+       when(mockClientService.getMockProducer().send(Matchers.argThat(new ArgumentMatcher<byte[]>() {
            @Override
-           public boolean matches(byte[] bytes) {
+           public boolean matches(Object o) {
                return true;
            }
        }))).thenThrow(PulsarClientException.class);

@@ -219,7 +219,7 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
        RecordSchema schema = getSchema(flowFile, readerFactory, messages.get(0));
        final BlockingQueue<Message<byte[]>> parseFailures = new LinkedBlockingQueue<>();
        OutputStream rawOut = session.write(flowFile);
-       final RecordSetWriter writer = getRecordWriter(writerFactory, schema, rawOut, flowFile);
+       final RecordSetWriter writer = getRecordWriter(writerFactory, schema, rawOut);
 
        // We were unable to determine the schema, therefore we cannot parse the messages
        if (schema == null || writer == null) {
@@ -336,10 +336,10 @@ public class ConsumePulsarRecord extends AbstractPulsarConsumerProcessor<byte[]>
         return schema;
     }
 
-    private RecordSetWriter getRecordWriter(RecordSetWriterFactory writerFactory, RecordSchema srcSchema, OutputStream out, FlowFile flowFile) {
+    private RecordSetWriter getRecordWriter(RecordSetWriterFactory writerFactory, RecordSchema srcSchema, OutputStream out) {
         try {
             RecordSchema writeSchema = writerFactory.getSchema(Collections.emptyMap(), srcSchema);
-            return writerFactory.createWriter(getLogger(), writeSchema, out, flowFile);
+            return writerFactory.createWriter(getLogger(), writeSchema, out);
         } catch (SchemaNotFoundException | IOException e) {
            return null;
         }
