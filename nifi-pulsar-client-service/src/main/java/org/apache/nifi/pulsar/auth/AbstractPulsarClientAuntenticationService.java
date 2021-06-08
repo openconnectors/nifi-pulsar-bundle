@@ -39,6 +39,14 @@ public abstract class AbstractPulsarClientAuntenticationService extends Abstract
             .sensitive(false)
             .build();
 
+    public static final PropertyDescriptor TLS_INSECURE = new PropertyDescriptor.Builder()
+            .name("TLS Insecure Connection")
+            .description("Allow TLS insecure connection.")
+            .required(false)
+            .allowableValues("true", "false")
+            .defaultValue("false")
+            .build();
+
     protected ConfigurationContext configContext;
 
     @OnEnabled
@@ -49,6 +57,11 @@ public abstract class AbstractPulsarClientAuntenticationService extends Abstract
     @Override
     public String getTlsTrustCertsFilePath() {
        return configContext.getProperty(TRUST_CERTIFICATE).getValue();
+    }
+
+    @Override
+    public boolean getAllowedTlsInsecure() {
+        return configContext.getProperty(TLS_INSECURE).asBoolean();
     }
 
     public abstract Authentication getAuthentication();

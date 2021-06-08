@@ -28,5 +28,7 @@ public interface PulsarClientAuthenticationService extends ControllerService {
 
     public String getTlsTrustCertsFilePath();
 
+    public boolean getAllowedTlsInsecure();
+
     public Authentication getAuthentication();
 }

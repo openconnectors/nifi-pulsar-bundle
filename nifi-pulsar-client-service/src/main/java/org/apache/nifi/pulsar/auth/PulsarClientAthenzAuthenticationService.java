@@ -134,6 +134,7 @@ public class PulsarClientAthenzAuthenticationService extends AbstractPulsarClien
     static {
         List<PropertyDescriptor> props = new ArrayList<>();
         props.add(TRUST_CERTIFICATE);
+        props.add(TLS_INSECURE);
         props.add(TENANT_DOMAIN);
         props.add(TENANT_SERVICE);
         props.add(PROVIDER_DOMAIN);

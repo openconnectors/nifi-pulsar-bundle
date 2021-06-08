@@ -58,6 +58,7 @@ public class PulsarClientTlsAuthenticationService extends AbstractPulsarClientAu
     static {
         List<PropertyDescriptor> props = new ArrayList<>();
         props.add(TRUST_CERTIFICATE);
+        props.add(TLS_INSECURE);
         props.add(CLIENT_CERTIFICATE);
         props.add(CLIENT_KEY);
         properties = Collections.unmodifiableList(props);

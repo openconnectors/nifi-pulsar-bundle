@@ -51,6 +51,7 @@ public class PulsarClientJwtAuthenticationService extends AbstractPulsarClientAu
     static {
         List<PropertyDescriptor> props = new ArrayList<>();
         props.add(TRUST_CERTIFICATE);
+        props.add(TLS_INSECURE);
         props.add(JWT_TOKEN);
         properties = Collections.unmodifiableList(props);
     }

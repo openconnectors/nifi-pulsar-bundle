@@ -268,7 +268,8 @@ public class StandardPulsarClientService extends AbstractControllerService imple
             builder = builder.authentication(authenticationService.getAuthentication());
 
             if (StringUtils.isNotBlank(authenticationService.getTlsTrustCertsFilePath())) {
-                builder = builder.tlsTrustCertsFilePath(authenticationService.getTlsTrustCertsFilePath());
+                builder = builder.tlsTrustCertsFilePath(authenticationService.getTlsTrustCertsFilePath())
+                        .allowTlsInsecureConnection(authenticationService.getAllowedTlsInsecure());
                 secure = true;
             }
         }
