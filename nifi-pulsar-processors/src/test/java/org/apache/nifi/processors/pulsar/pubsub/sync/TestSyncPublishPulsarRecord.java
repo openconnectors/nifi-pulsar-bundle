@@ -91,7 +91,7 @@ public class TestSyncPublishPulsarRecord extends TestPublishPulsarRecord {
 
     @Test
     public void testMultipleRecordSuccess() throws PulsarClientException {
-        StringBuilder sb = new StringBuilder().append("Mary Jane, 32").append("\n")
+        StringBuffer sb = new StringBuffer().append("Mary Jane, 32").append("\n")
                                               .append("John Doe, 35").append("\n")
                                               .append("Busta Move, 26").append("\n");
 
@@ -114,7 +114,7 @@ public class TestSyncPublishPulsarRecord extends TestPublishPulsarRecord {
 
     @Test
     public void testBulkRecordSuccess() throws PulsarClientException {
-        StringBuilder sb = new StringBuilder();
+        StringBuffer sb = new StringBuffer();
 
         for (int idx = 0; idx < 1000; idx++) {
             sb.append("Mary Jane, 32").append("\n");

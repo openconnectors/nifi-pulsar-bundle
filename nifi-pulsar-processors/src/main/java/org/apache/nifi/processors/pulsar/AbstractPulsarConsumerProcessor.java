@@ -116,13 +116,13 @@ public abstract class AbstractPulsarConsumerProcessor<T> extends AbstractProcess
     public static final PropertyDescriptor ASYNC_ENABLED = new PropertyDescriptor.Builder()
             .name("ASYNC_ENABLED")
             .displayName("Async Enabled")
-            .description("Control whether the messages will be consumed asyncronously or not. Messages consumed"
-                    + " syncronously will be acknowledged immediately before processing the next message, while"
-                    + " asyncronous messages will be acknowledged after the Pulsar broker responds. \n"
-                    + "Enabling asyncronous message consumption introduces the possibility of duplicate data "
+            .description("Control whether the messages will be consumed asynchronously or not. Messages consumed"
+                    + " synchronously will be acknowledged immediately before processing the next message, while"
+                    + " asynchronous messages will be acknowledged after the Pulsar broker responds. \n"
+                    + "Enabling asynchronous message consumption introduces the possibility of duplicate data "
                     + "consumption in the case where the Processor is stopped before it has time to send an "
                     + "acknowledgement back to the Broker. In this scenario, the Broker would assume that the "
-                    + "un-acknowledged message was not successuflly processed and re-send it when the Processor restarted.")
+                    + "un-acknowledged message was not successfully processed and re-send it when the Processor restarted.")
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("false")

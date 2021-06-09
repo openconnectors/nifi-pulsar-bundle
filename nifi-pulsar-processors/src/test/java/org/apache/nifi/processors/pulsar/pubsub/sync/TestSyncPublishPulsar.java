@@ -135,7 +135,7 @@ public class TestSyncPublishPulsar extends TestPublishPulsar {
         runner.setProperty(PublishPulsar.TOPIC, "my-topic");
         runner.setProperty(PublishPulsar.MESSAGE_DEMARCATOR, demarcator);
 
-        final StringBuilder sb = new StringBuilder();
+        final StringBuffer sb = new StringBuffer();
 
         for (int idx = 0; idx < 20; idx++) {
            sb.append(content).append(demarcator);

@@ -234,7 +234,7 @@ public class StandardPulsarClientService extends AbstractControllerService imple
     }
 
     private static String buildPulsarBrokerRootUrl(String uri, boolean tlsEnabled) {
-        StringBuilder builder = new StringBuilder().append("pulsar");
+        StringBuffer builder = new StringBuffer().append("pulsar");
 
         if (tlsEnabled) {
             builder.append("+ssl");
