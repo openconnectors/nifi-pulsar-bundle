@@ -57,7 +57,7 @@ import org.apache.pulsar.client.api.SubscriptionType;
 
 public abstract class AbstractPulsarConsumerProcessor<T> extends AbstractProcessor {
 
-    static final AllowableValue EXCLUSIVE = new AllowableValue("Exclusive", "Exclusive", "There can be only 1 consumer on the same topic with the same subscription name");
+    protected static final AllowableValue EXCLUSIVE = new AllowableValue("Exclusive", "Exclusive", "There can be only 1 consumer on the same topic with the same subscription name");
     static final AllowableValue SHARED = new AllowableValue("Shared", "Shared", "Multiple consumer will be able to use the same subscription name and the messages");
     static final AllowableValue FAILOVER = new AllowableValue("Failover", "Failover", "Multiple consumer will be able to use the same subscription name but only 1 consumer "
             + "will receive the messages. If that consumer disconnects, one of the other connected consumers will start receiving messages.");
@@ -355,7 +355,7 @@ public abstract class AbstractPulsarConsumerProcessor<T> extends AbstractProcess
                     .evaluateAttributeExpressions().asInteger() : Integer.MAX_VALUE;
 
             getConsumerService().submit(() -> {
-                List<Message<T>> messages = new LinkedList<Message<T>>();
+                List<Message<T>> messages = new LinkedList<>();
                 Message<T> msg = null;
                 AtomicInteger msgCount = new AtomicInteger(0);
 

@@ -50,7 +50,6 @@ public class PublishPulsar extends AbstractPulsarProducerProcessor<byte[]> {
 
     @Override
     public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
-
         handleFailures(session);
 
         final FlowFile flowFile = session.get();

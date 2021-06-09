@@ -64,7 +64,7 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
                 return;
             }
 
-            if (context.getProperty(ASYNC_ENABLED).asBoolean()) {
+            if (context.getProperty(ASYNC_ENABLED).isSet() && context.getProperty(ASYNC_ENABLED).asBoolean()) {
                 consumeAsync(consumer, context, session);
                 handleAsync(consumer, context, session);
             } else {
@@ -100,7 +100,6 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
                             msgCount.getAndIncrement();
                         } catch (final IOException ioEx) {
                             session.rollback();
-                            return;
                         }
                     });
 
@@ -132,36 +131,40 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
             final byte[] demarcatorBytes = context.getProperty(MESSAGE_DEMARCATOR).isSet() ? context.getProperty(MESSAGE_DEMARCATOR)
                     .evaluateAttributeExpressions().getValue().getBytes(StandardCharsets.UTF_8) : null;
 
+            boolean exclusive = context.getProperty(SUBSCRIPTION_TYPE).getValue().equalsIgnoreCase(EXCLUSIVE.getValue());
+
             FlowFile flowFile = session.create();
             OutputStream out = session.write(flowFile);
-            Message<byte[]> msg;
+            Message<byte[]> msg = null;
             Message<byte[]> lastMsg = null;
             AtomicInteger msgCount = new AtomicInteger(0);
             AtomicInteger loopCounter = new AtomicInteger(0);
 
             while (((msg = consumer.receive(0, TimeUnit.SECONDS)) != null) && loopCounter.get() < maxMessages) {
                 try {
-
                     lastMsg = msg;
                     loopCounter.incrementAndGet();
-
-                    // Skip empty messages, as they cause NPE's when we write them to the OutputStream
-                    if (msg.getValue() == null || msg.getValue().length < 1) {
-                      continue;
+                    if (!exclusive) {
+                        consumer.acknowledge(msg);
                     }
-                    out.write(msg.getValue());
-                    out.write(demarcatorBytes);
-                    msgCount.getAndIncrement();
 
+                    if (msg.getValue() != null && ((byte[])msg.getValue()).length >= 1) {
+                        out.write((byte[])msg.getValue());
+                        out.write(demarcatorBytes);
+                        msgCount.getAndIncrement();
+                    }
                 } catch (final IOException ioEx) {
-                  session.rollback();
-                  return;
+                    getLogger().error("Unable to create flow file ", ioEx);
+                    session.rollback();
+                    if (exclusive) {
+                        consumer.acknowledgeCumulative(lastMsg);
+                    }
+                    return;
                 }
             }
 
             IOUtils.closeQuietly(out);
-
-            if (lastMsg != null)  {
+            if (exclusive && lastMsg != null)  {
                 consumer.acknowledgeCumulative(lastMsg);
             }
 
@@ -175,8 +178,8 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
                 getLogger().debug("Created {} from {} messages received from Pulsar Server and transferred to 'success'",
                    new Object[]{flowFile, msgCount.toString()});
             }
-
         } catch (PulsarClientException e) {
+            getLogger().error("Error communicating with Apache Pulsar", e);
             context.yield();
             session.rollback();
         }
