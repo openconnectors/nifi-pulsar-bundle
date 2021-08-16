@@ -41,7 +41,7 @@ public class TestAsyncPublishPulsarRecord extends TestPublishPulsarRecord {
            public boolean matches(byte[] bytes) {
                return true;
            }
-        }))).thenThrow(PulsarClientException.class);
+        }))).thenAnswer(invocation -> {throw new PulsarClientException("Some exception");});
 
        final String content = "Mary Jane, 32";
 
