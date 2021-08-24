@@ -34,7 +34,7 @@
     </modules>
     
     <properties>
-    	<pulsar.version>2.7.2</pulsar.version>
+        <pulsar.version>2.7.2</pulsar.version>
         <maven.compiler.target>1.8</maven.compiler.target>
         <maven.compiler.source>1.8</maven.compiler.source>
     </properties>
