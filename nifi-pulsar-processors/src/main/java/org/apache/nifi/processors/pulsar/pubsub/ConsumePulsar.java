@@ -108,15 +108,16 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
                     session.putAttribute(flowFile, MSG_COUNT, msgCount.toString());
                     session.getProvenanceReporter().receive(flowFile, getPulsarClientService().getPulsarBrokerRootURL() + "/" + consumer.getTopic());
                     session.transfer(flowFile, REL_SUCCESS);
-                    session.commit();
+                    session.commitAsync(()-> {
+                        // Acknowledge consuming the message
+                        getAckService().submit(new Callable<Object>() {
+                            @Override
+                            public Object call() throws Exception {
+                                return consumer.acknowledgeCumulativeAsync(messages.get(messages.size()-1)).get();
+                            }
+                        });
+                    });
                 }
-                // Acknowledge consuming the message
-                getAckService().submit(new Callable<Object>() {
-                    @Override
-                    public Object call() throws Exception {
-                       return consumer.acknowledgeCumulativeAsync(messages.get(messages.size()-1)).get();
-                    }
-                });
             }
         } catch (InterruptedException | ExecutionException e) {
             getLogger().error("Trouble consuming messages ", e);
@@ -170,7 +171,7 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
 
             if (msgCount.get() < 1) {
                 session.remove(flowFile);
-                session.commit();
+                session.commitAsync();
             } else {
                 session.putAttribute(flowFile, MSG_COUNT, msgCount.toString());
                 session.getProvenanceReporter().receive(flowFile, getPulsarClientService().getPulsarBrokerRootURL() + "/" + consumer.getTopic());
