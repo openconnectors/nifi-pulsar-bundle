@@ -58,7 +58,7 @@ public class TestAsyncPublishPulsarRecord extends TestPublishPulsarRecord {
         * this cycle. Therefore, we set the number of iterations below to some very large number to ensure
         * that this cycle does complete on these builds
         */
-       runner.run(5000, false, true);
+       runner.run(60, false, true);
 
        verify(mockClientService.getMockProducer(), times(1)).sendAsync("\"Mary Jane\",\"32\"\n".getBytes());
 
