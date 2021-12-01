@@ -114,7 +114,7 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
                 getAckService().submit(new Callable<Object>() {
                     @Override
                     public Object call() throws Exception {
-                       return consumer.acknowledgeCumulativeAsync(messages.get(messages.size()-1)).get();
+                        return consumer.acknowledgeCumulativeAsync(messages.get(messages.size()-1)).get();
                     }
                 });
             }

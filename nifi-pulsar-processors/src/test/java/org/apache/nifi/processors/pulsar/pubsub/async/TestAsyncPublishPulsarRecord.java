@@ -58,7 +58,8 @@ public class TestAsyncPublishPulsarRecord extends TestPublishPulsarRecord {
         * this cycle. Therefore, we set the number of iterations below to some very large number to ensure
         * that this cycle does complete on these builds
         */
-       runner.run(5000, false, true);
+//       runner.run(5000, false, true);
+       runner.run(500, false, true);
 
        verify(mockClientService.getMockProducer(), times(1)).sendAsync("\"Mary Jane\",\"32\"\n".getBytes());
 
@@ -133,7 +134,8 @@ public class TestAsyncPublishPulsarRecord extends TestPublishPulsarRecord {
     public void testBulkRecordSuccess() throws PulsarClientException {
         StringBuffer sb = new StringBuffer();
 
-        for (int idx = 0; idx < 98634; idx++) {
+//        for (int idx = 0; idx < 98634; idx++) {
+        for (int idx = 0; idx < 100; idx++) {
             sb.append("Mary Jane, 32").append("\n");
         }
 
@@ -148,9 +150,11 @@ public class TestAsyncPublishPulsarRecord extends TestPublishPulsarRecord {
 
         MockFlowFile result = results.get(0);
         result.assertContentEquals(sb.toString());
-        result.assertAttributeEquals(PublishPulsarRecord.MSG_COUNT, "98634");
+//        result.assertAttributeEquals(PublishPulsarRecord.MSG_COUNT, "98634");
+        result.assertAttributeEquals(PublishPulsarRecord.MSG_COUNT, "100");
         result.assertAttributeEquals(PublishPulsarRecord.TOPIC_NAME, TOPIC_NAME);
 
-        verify(mockClientService.getMockProducer(), times(98634)).sendAsync("\"Mary Jane\",\"32\"\n".getBytes());
+//        verify(mockClientService.getMockProducer(), times(98634)).sendAsync("\"Mary Jane\",\"32\"\n".getBytes());
+        verify(mockClientService.getMockProducer(), times(100)).sendAsync("\"Mary Jane\",\"32\"\n".getBytes());
     }
 }

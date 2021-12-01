@@ -32,6 +32,7 @@ public abstract class AbstractPulsarProcessorTest<T> {
         runner.addControllerService("Pulsar Client Service", mockClientService);
         runner.enableControllerService(mockClientService);
         runner.setProperty(AbstractPulsarConsumerProcessor.PULSAR_CLIENT_SERVICE, "Pulsar Client Service");
+        runner.setAllowSynchronousSessionCommits(true);
     }
 
     @After
