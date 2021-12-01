@@ -109,15 +109,6 @@ public class ConsumePulsar extends AbstractPulsarConsumerProcessor<byte[]> {
                     session.getProvenanceReporter().receive(flowFile, getPulsarClientService().getPulsarBrokerRootURL() + "/" + consumer.getTopic());
                     session.transfer(flowFile, REL_SUCCESS);
                     session.commit();
-//                    session.commitAsync(()-> {
-//                        // Acknowledge consuming the message
-//                        getAckService().submit(new Callable<Object>() {
-//                            @Override
-//                            public Object call() throws Exception {
-//                                return consumer.acknowledgeCumulativeAsync(messages.get(messages.size()-1)).get();
-//                            }
-//                        });
-//                    });
                 }
                 // Acknowledge consuming the message
                 getAckService().submit(new Callable<Object>() {
